@@ -6,8 +6,10 @@ import { randomBytes, jitter } from "../crypto/random.ts"
 import { scanSlots } from "../slot/scanner.ts"
 import { findFreeSlot } from "../slot/allocator.ts"
 import { validatePassphrase } from "../passphrase/validator.ts"
+import { resolveScheme } from "../crypto/registry.ts"
 //
 import { InvalidPassphraseError } from "../errors.ts"
+import { ALLOCATED_BYTE_OFFSET } from "./constants.ts"
 
 export interface PDECCreateOptions {
   path: string
@@ -146,8 +148,8 @@ export class PDECContainer {
     }
     const schemeId: number = options?.scheme !== undefined ? options.scheme! : this._layout.defaultScheme
     if (typeof schemeId !== "number" || Number.isNaN(schemeId)) throw new Error("schemeId must be a number")
-    // Force mode to 'unicode' for XChaCha20+Argon2id to match read path
-    if (schemeId === 0x02) mode = "unicode"
+    const scheme = resolveScheme(schemeId)
+    if (scheme.forceMode !== undefined) mode = scheme.forceMode
     const { buildSlot } = await import("./build_slot.ts")
     const slotBuf = await buildSlot({
       passphrase,
@@ -175,10 +177,8 @@ export class PDECContainer {
       this._layout
     )
     if (!result) return false
-    // Overwrite slot with random bytes, but set allocated=0 in header
     const slotBuf = randomBytes(this._layout.slotSize)
-    // Set allocated=0 in header
-    slotBuf[6] = 0
+    slotBuf[ALLOCATED_BYTE_OFFSET] = 0
     await this._handle.write(slotOffset(this._layout, result.slotIndex), slotBuf)
     await this._handle.sync()
     return true

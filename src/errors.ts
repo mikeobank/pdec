@@ -13,6 +13,7 @@ export class InvalidPassphraseError extends PDECError {}
 export class ContainerFullError extends PDECError {}
 export class ContainerTooSmallError extends PDECError {}
 export class UnknownSchemeError extends PDECError {}
+export class SchemeAlreadyRegisteredError extends PDECError {}
 export class IOError extends PDECError {
   override readonly cause?: unknown
   constructor(message?: string, cause?: unknown) {

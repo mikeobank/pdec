@@ -1,4 +1,4 @@
-import { HEADER_SIZE, buildAAD } from "../core/constants.ts"
+import { HEADER_SIZE, MAGIC, buildAAD } from "../core/constants.ts"
 import { buildHeader } from "../core/header.ts"
 import { randomBytes } from "../crypto/random.ts"
 import { withKey } from "../crypto/kdf.ts"
@@ -30,7 +30,7 @@ export const buildSlot = async ({
   const writtenAtMs = Date.now()
   const norm = normalizePassphrase(passphrase)
   const header = buildHeader({
-    magic: new Uint8Array([0xDE, 0xC0, 0x1A, 0x57]),
+    magic: MAGIC,
     version: 0x01,
     schemeId,
     allocated: 1,

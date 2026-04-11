@@ -3,7 +3,6 @@ import type { ContainerLayout } from "../core/layout.ts"
 import { tryDecryptSlot as _tryDecryptSlot } from "./scanner_impl.ts"
 
 export interface ScanResult {
-  readonly found: boolean
   readonly slotIndex: number
   readonly header: SlotHeader
   readonly payload: Uint8Array

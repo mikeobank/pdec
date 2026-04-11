@@ -2,7 +2,7 @@ import { AES256GCMArgon2 } from "./schemes/aes256-gcm-argon2.ts"
 import { XChaCha20Argon2 } from "./schemes/xchacha20-argon2.ts"
 import { AES256GCMScrypt } from "./schemes/aes256-gcm-scrypt.ts"
 import type { ICryptoScheme } from "./schemes/types.ts"
-import { UnknownSchemeError } from "../errors.ts"
+import { UnknownSchemeError, SchemeAlreadyRegisteredError } from "../errors.ts"
 
 const _registry = new Map<number, ICryptoScheme>([
   [AES256GCMArgon2.id, AES256GCMArgon2],
@@ -23,6 +23,6 @@ export const resolveScheme = (id: number): ICryptoScheme => {
  * Register a custom scheme. Throws if ID already registered.
  */
 export const registerScheme = (scheme: ICryptoScheme): void => {
-  if (_registry.has(scheme.id)) throw new UnknownSchemeError()
+  if (_registry.has(scheme.id)) throw new SchemeAlreadyRegisteredError()
   _registry.set(scheme.id, scheme)
 }

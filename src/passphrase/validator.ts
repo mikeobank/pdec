@@ -17,6 +17,10 @@ export interface PassphraseValidationResult {
  *               of any length (user must use PIN mode explicitly).
  *               Rejects whitespace-only strings.
  */
+export const detectPassphraseMode = (input: string): PassphraseMode => {
+  return /^\d{5}$/.test(input) ? "pin" : "unicode"
+}
+
 export const validatePassphrase = (input: string): PassphraseValidationResult => {
   const warnings: string[] = []
   const errors: string[] = []

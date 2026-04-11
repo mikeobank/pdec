@@ -4,6 +4,7 @@ import { parseHeader } from "../core/header.ts"
 import { resolveScheme } from "../crypto/registry.ts"
 import { buildAAD, HEADER_SIZE } from "../core/constants.ts"
 import { normalizePassphrase } from "../passphrase/normalizer.ts"
+import { detectPassphraseMode } from "../passphrase/validator.ts"
 
 /**
  * Internal implementation for tryDecryptSlot.
@@ -25,11 +26,7 @@ export const tryDecryptSlot = async (
   const scheme = resolveScheme(header.schemeId)
   const aad = buildAAD(slotIndex, header.schemeId)
   const kdfInput = normalizePassphrase(passphrase)
-  // Use the same mode detection as validatePassphrase
-  let mode: "pin" | "unicode" = "unicode"
-  if (/^\d{5}$/.test(passphrase)) {
-    mode = "pin"
-  }
+  const mode = scheme.forceMode ?? detectPassphraseMode(passphrase)
   let plaintext: Uint8Array
   try {
     const key = await scheme.deriveKey(kdfInput + String.fromCharCode(...header.slotNonce), header.salt, mode)
@@ -48,7 +45,6 @@ export const tryDecryptSlot = async (
   // Magic check (0xDE C0 1A 57) after AEAD
   if (!header.magic.every((b, i) => b === [0xDE, 0xC0, 0x1A, 0x57][i])) return undefined
   return {
-    found: true,
     slotIndex,
     header,
     payload: plaintext

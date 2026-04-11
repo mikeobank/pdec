@@ -12,6 +12,7 @@ export const XChaCha20Argon2 = {
   keyBytes: 32,
   nonceBytes: 24,
   tagBytes: 16,
+  forceMode: "unicode" as const,
 
   deriveKey: createArgon2KDF(
     { m: 262144, t: 10, p: 1, dkLen: 32 }, // pin
