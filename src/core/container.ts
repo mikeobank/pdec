@@ -175,7 +175,10 @@ export class PDECContainer {
       this._layout
     )
     if (!result) return false
+    // Overwrite slot with random bytes, but set allocated=0 in header
     const slotBuf = randomBytes(this._layout.slotSize)
+    // Set allocated=0 in header
+    slotBuf[6] = 0
     await this._handle.write(slotOffset(this._layout, result.slotIndex), slotBuf)
     await this._handle.sync()
     return true

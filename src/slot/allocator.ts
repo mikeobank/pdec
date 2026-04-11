@@ -1,6 +1,6 @@
 import type { ContainerLayout } from "../core/layout.ts"
 import { ContainerFullError } from "../errors.ts"
-import { MAGIC } from "../core/constants.ts"
+//
 
 /**
  * Return the index of the first slot that appears empty (tryDecryptSlot
@@ -11,17 +11,18 @@ export const findFreeSlot = async (
   readSlot: (i: number) => Promise<Uint8Array>,
   layout: ContainerLayout
 ): Promise<number> => {
+  const { parseHeader } = await import("../core/header.ts")
+  const { HEADER_SIZE } = await import("../core/constants.ts")
   for (let i = 0; i < layout.maxSlots; ++i) {
     const slotBytes = await readSlot(i)
-    const magic = slotBytes.subarray(0, 4)
-    let isEmpty = false
-    for (let j = 0; j < 4; ++j) {
-      if (magic[j] !== MAGIC[j]) {
-        isEmpty = true
-        break
-      }
+    let header
+    try {
+      header = parseHeader(slotBytes.subarray(0, HEADER_SIZE))
+    } catch {
+      // Any parse error (including version mismatch) means slot is free
+      return i
     }
-    if (isEmpty) return i
+    if (header.allocated === 0) return i
   }
   throw new ContainerFullError()
 }

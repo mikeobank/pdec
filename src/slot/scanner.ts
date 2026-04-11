@@ -35,10 +35,18 @@ export const scanSlots = async (
   passphrase: string,
   layout: ContainerLayout
 ): Promise<ScanResult | undefined> => {
+  let latest: ScanResult | undefined = undefined
   for (const i of order) {
     const slotBytes = await readSlot(i)
     const candidate = await tryDecryptSlot(slotBytes, i, passphrase, layout)
-    if (candidate !== undefined) return candidate
+    if (candidate !== undefined) {
+      if (
+        !latest ||
+        (candidate.header.writtenAtMs && latest.header.writtenAtMs && candidate.header.writtenAtMs > latest.header.writtenAtMs)
+      ) {
+        latest = candidate
+      }
+    }
   }
-  return undefined
+  return latest
 }

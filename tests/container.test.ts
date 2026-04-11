@@ -97,23 +97,26 @@ Deno.test("overwriting a slot preserves all other slots", async () => {
 })
 
 Deno.test("write with 5-digit PIN passphrase succeeds", async () => {
-  // Inject a fast test KDF for Argon2id
+  // Register a custom fast test scheme for Argon2id
+  const { registerScheme } = await import("../src/crypto/registry.ts")
   const { AES256GCMArgon2 } = await import("../src/crypto/schemes/aes256-gcm-argon2.ts")
-  const origKDF = AES256GCMArgon2.deriveKey
-  AES256GCMArgon2.deriveKey = (await import("../src/crypto/kdf.ts")).createArgon2KDF(
-    { m: 8, t: 1, p: 1, dkLen: 32 },
-    { m: 8, t: 1, p: 1, dkLen: 32 }
-  )
-  try {
-    const c = makeContainer()
-    const data = randomBytes(32)
-    await c.write("12345", data)
-    const slot = await c.read("12345")
-    assert(slot)
-    assertEquals(slot?.data, data)
-  } finally {
-    AES256GCMArgon2.deriveKey = origKDF
+  const { createArgon2KDF } = await import("../src/crypto/kdf.ts")
+  const fastScheme = {
+    ...AES256GCMArgon2,
+    id: 0x99,
+    name: "AES-256-GCM+Argon2id (fast test)",
+    deriveKey: createArgon2KDF(
+      { m: 8, t: 1, p: 1, dkLen: 32 },
+      { m: 8, t: 1, p: 1, dkLen: 32 }
+    )
   }
+  registerScheme(fastScheme)
+  const c = makeContainer({ scheme: 0x99 })
+  const data = randomBytes(32)
+  await c.write("12345", data)
+  const slot = await c.read("12345")
+  assert(slot)
+  assertEquals(slot?.data, data)
 })
 
 Deno.test("write with Unicode passphrase containing emoji succeeds", async () => {

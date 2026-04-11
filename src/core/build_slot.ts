@@ -33,6 +33,7 @@ export const buildSlot = async ({
     magic: new Uint8Array([0xDE, 0xC0, 0x1A, 0x57]),
     version: 0x01,
     schemeId,
+    allocated: 1,
     salt,
     nonce: scheme.nonceBytes === 12 ? nonce : nonce.subarray(0, 12),
     payloadLen: data.length,

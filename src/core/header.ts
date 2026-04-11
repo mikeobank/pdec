@@ -15,6 +15,7 @@ export interface SlotHeader {
   readonly magic: Uint8Array // 4 bytes
   readonly version: number
   readonly schemeId: number
+  readonly allocated: number // 1 byte: 1 = allocated, 0 = free
   readonly salt: Uint8Array // 16 bytes
   readonly nonce: Uint8Array // 12 bytes (XChaCha20 24-byte nonce in payload)
   readonly payloadLen: number
@@ -32,7 +33,7 @@ export const buildHeader = (header: SlotHeader): Uint8Array => {
   buf.set(header.magic, 0)
   buf[4] = header.version & 0xFF
   buf[5] = header.schemeId & 0xFF
-  buf[6] = 0
+  buf[6] = header.allocated & 0xFF
   buf[7] = 0
   buf.set(header.salt, 8)
   buf.set(header.nonce, 24)
@@ -55,6 +56,7 @@ export const parseHeader = (bytes: Uint8Array): SlotHeader => {
   const version = bytes[4]
   if (version !== VERSION) throw new VersionMismatchError()
   const schemeId = Number(bytes[5])
+  const allocated = Number(bytes[6])
   const salt = bytes.slice(8, 24)
   const nonce = bytes.slice(24, 36)
   const payloadLen = view.getUint32(36, true)
@@ -65,10 +67,11 @@ export const parseHeader = (bytes: Uint8Array): SlotHeader => {
     magic,
     version,
     schemeId,
+    allocated,
     salt,
     nonce,
     payloadLen,
     writtenAtMs,
-    slotNonce
+    slotNonce,
   }
 }
