@@ -1,6 +1,13 @@
 import { VERSION, HEADER_SIZE } from "./constants.ts"
 import { VersionMismatchError } from "../errors.ts"
 
+export class HeaderLengthError extends Error {
+  constructor(message = "Header length mismatch") {
+    super(message)
+    this.name = "HeaderLengthError"
+  }
+}
+
 /**
  * Slot header structure (plaintext, inside AEAD).
  */
@@ -42,7 +49,7 @@ export const buildHeader = (header: SlotHeader): Uint8Array => {
  * if version field is not 0x01. Does NOT validate magic here.
  */
 export const parseHeader = (bytes: Uint8Array): SlotHeader => {
-  if (bytes.length !== HEADER_SIZE) throw new VersionMismatchError()
+  if (bytes.length !== HEADER_SIZE) throw new HeaderLengthError()
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
   const magic = bytes.slice(0, 4)
   const version = bytes[4]

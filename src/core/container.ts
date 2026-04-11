@@ -1,16 +1,12 @@
 import type { IRandomAccessHandle } from "../io/types.ts"
 import { FileHandle } from "../io/file-handle.ts"
 import { computeLayout, slotOffset } from "./layout.ts"
-import { buildHeader } from "./header.ts"
-import { HEADER_SIZE } from "./constants.ts"
-import { buildAAD } from "./constants.ts"
+//
 import { randomBytes, jitter } from "../crypto/random.ts"
 import { scanSlots } from "../slot/scanner.ts"
 import { findFreeSlot } from "../slot/allocator.ts"
 import { validatePassphrase } from "../passphrase/validator.ts"
-import { normalizePassphrase } from "../passphrase/normalizer.ts"
-import { resolveScheme } from "../crypto/registry.ts"
-import { withKey } from "../crypto/kdf.ts"
+//
 import { InvalidPassphraseError } from "../errors.ts"
 
 export interface PDECCreateOptions {
@@ -105,29 +101,22 @@ export class PDECContainer {
    * Returns SlotData on success, undefined if no slot matched.
    */
   async read(passphrase: string): Promise<SlotData | undefined> {
-    const order = Array.from({ length: this._layout.maxSlots }, (_, i) => i)
-    const results = await Promise.all(
-      order.map(async (i) => {
-        const result = await scanSlots(
-          (j) => this._handle.read(slotOffset(this._layout, j), this._layout.slotSize),
-          [i],
-          passphrase,
-          this._layout
-        )
-        if (!result) return undefined
-        return {
-          data: result.payload,
-          schemeId: result.header.schemeId,
-          writtenAt: new Date(result.header.writtenAtMs),
-          slotIndex: result.slotIndex
-        }
-      })
+    const { shuffleIndices } = await import("../crypto/random.ts")
+    const order = shuffleIndices(this._layout.maxSlots)
+    const result = await scanSlots(
+      (i) => this._handle.read(slotOffset(this._layout, i), this._layout.slotSize),
+      order,
+      passphrase,
+      this._layout
     )
     await jitter(50, 200)
-    const valid = results.filter((r): r is SlotData => r !== undefined)
-    if (valid.length === 0) return undefined
-    // Return the slot with the latest writtenAt
-    return valid.reduce((a, b) => (a.writtenAt > b.writtenAt ? a : b))
+    if (!result) return undefined
+    return {
+      data: result.payload,
+      schemeId: result.header.schemeId,
+      writtenAt: new Date(result.header.writtenAtMs),
+      slotIndex: result.slotIndex
+    }
   }
 
   /**
@@ -137,7 +126,6 @@ export class PDECContainer {
     const validation = validatePassphrase(passphrase)
     if (!validation.valid) throw new InvalidPassphraseError()
     let mode = validation.mode
-    const norm = normalizePassphrase(passphrase)
     let slotIndex: number | undefined = undefined
     if (!options?.forceNewSlot) {
       // Try to find existing slot for this passphrase
@@ -158,46 +146,19 @@ export class PDECContainer {
     }
     const schemeId: number = options?.scheme !== undefined ? options.scheme! : this._layout.defaultScheme
     if (typeof schemeId !== "number" || Number.isNaN(schemeId)) throw new Error("schemeId must be a number")
-    const scheme = resolveScheme(schemeId)
     // Force mode to 'unicode' for XChaCha20+Argon2id to match read path
     if (schemeId === 0x02) mode = "unicode"
-    const salt = randomBytes(16)
-    const slotNonce = randomBytes(16)
-    const nonce = randomBytes(scheme.nonceBytes)
-    const writtenAtMs = Date.now()
-    if (schemeId === undefined) throw new Error("schemeId must not be undefined")
-    const header = buildHeader({
-      magic: new Uint8Array([0xDE, 0xC0, 0x1A, 0x57]),
-      version: 0x01,
-      schemeId: schemeId,
-      salt: salt,
-      nonce: scheme.nonceBytes === 12 ? nonce : nonce.subarray(0, 12),
-      payloadLen: data.length,
-      writtenAtMs: writtenAtMs,
-      slotNonce: slotNonce
+    const { buildSlot } = await import("./build_slot.ts")
+    const slotBuf = await buildSlot({
+      passphrase,
+      data,
+      slotIndex,
+      mode,
+      schemeId,
+      slotSize: this._layout.slotSize
     })
-    const aad = buildAAD(slotIndex, schemeId)
-    await withKey(await scheme.deriveKey(norm + String.fromCharCode(...slotNonce), salt, mode), (key) => {
-      return (async () => {
-        const { ciphertext, tag } = await scheme.encrypt(key, nonce, data, aad)
-        // Compose slot: header || (full nonce if needed) || ciphertext || tag || random padding
-        let offset = HEADER_SIZE
-        const slotBuf = new Uint8Array(this._layout.slotSize)
-        slotBuf.set(header, 0)
-        if (scheme.nonceBytes > 12) {
-          slotBuf.set(nonce, offset)
-          offset += scheme.nonceBytes
-        }
-        slotBuf.set(ciphertext, offset)
-        slotBuf.set(tag, offset + ciphertext.length)
-        const padStart = offset + ciphertext.length + tag.length
-        if (padStart < slotBuf.length) {
-          slotBuf.set(randomBytes(slotBuf.length - padStart), padStart)
-        }
-        await this._handle.write(slotOffset(this._layout, slotIndex), slotBuf)
-        await this._handle.sync()
-      })()
-    })
+    await this._handle.write(slotOffset(this._layout, slotIndex), slotBuf)
+    await this._handle.sync()
   }
 
   /**
@@ -205,7 +166,8 @@ export class PDECContainer {
    * Returns false if passphrase had no slot, true if wiped.
    */
   async wipe(passphrase: string): Promise<boolean> {
-    const order = Array.from({ length: this._layout.maxSlots }, (_, i) => i)
+    const { shuffleIndices } = await import("../crypto/random.ts")
+    const order = shuffleIndices(this._layout.maxSlots)
     const result = await scanSlots(
       (i) => this._handle.read(slotOffset(this._layout, i), this._layout.slotSize),
       order,

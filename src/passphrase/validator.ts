@@ -37,9 +37,5 @@ export const validatePassphrase = (input: string): PassphraseValidationResult =>
     errors.push("Whitespace-only passphrase not allowed")
     return { valid: false, mode: "unicode", warnings, errors }
   }
-  if (input.length === 0) {
-    errors.push("Empty passphrase not allowed")
-    return { valid: false, mode: "unicode", warnings, errors }
-  }
   return { valid: true, mode: "unicode", warnings, errors }
 }

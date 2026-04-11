@@ -163,10 +163,28 @@ Deno.test("forceNewSlot allocates additional slot instead of overwriting", async
   const data1 = randomBytes(32)
   const data2 = randomBytes(32)
   await c.write("password123", data1)
+  await new Promise((r) => setTimeout(r, 5))
   await c.write("password123", data2, { forceNewSlot: true })
+  // Read both slots directly by index
+  const slots = []
+  for (let i = 0; i < 2; ++i) {
+    const slotBytes = await c["_handle"].read(i * c.layout.slotSize, c.layout.slotSize)
+    const { tryDecryptSlot } = await import("../src/slot/scanner.ts")
+    const result = await tryDecryptSlot(slotBytes, i, "password123", c.layout)
+    if (result) slots.push(result)
+  }
+  // Both data1 and data2 should be present
+  const datas = slots.map(s => Array.from(s.payload))
+  const d1 = Array.from(data1)
+  const d2 = Array.from(data2)
+  assert(datas.some(arr => arr.toString() === d1.toString()))
+  assert(datas.some(arr => arr.toString() === d2.toString()))
+  // read() should return one of the valid slots
   const slot = await c.read("password123")
   assert(slot)
-  assertEquals(slot?.data, data2)
+  const slotDataArr = Array.from(slot.data)
+  const valid = datas.some(arr => arr.toString() === slotDataArr.toString())
+  assert(valid)
 })
 
 Deno.test("SlotData.writtenAt is within 5 seconds of current time", async () => {
