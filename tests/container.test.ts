@@ -71,25 +71,56 @@ Deno.test("wipe returns false when passphrase has no slot", async () => {
   assertEquals(wiped, false)
 })
 
+
+
 Deno.test("two slots are independently accessible", async () => {
-  const c = makeContainer()
+  // Register a custom fast test scheme for Argon2id
+  const { registerScheme } = await import("../src/crypto/registry.ts")
+  const { AES256GCMArgon2 } = await import("../src/crypto/schemes/aes256-gcm-argon2.ts")
+  const { createArgon2KDF } = await import("../src/crypto/kdf.ts")
+  const fastScheme = {
+    ...AES256GCMArgon2,
+    id: 0x98,
+    name: "AES-256-GCM+Argon2id (fast test)",
+    deriveKey: createArgon2KDF(
+      { m: 8, t: 1, p: 1, dkLen: 32 },
+      { m: 8, t: 1, p: 1, dkLen: 32 }
+    )
+  }
+  registerScheme(fastScheme)
+  const c = makeContainer({ scheme: 0x98 })
   const data1 = randomBytes(32)
   const data2 = randomBytes(32)
-  await c.write("password123", data1)
-  await c.write("password456", data2)
+  await c.write("password123", data1, { scheme: 0x98 })
+  await c.write("password456", data2, { scheme: 0x98 })
   const slot1 = await c.read("password123")
   const slot2 = await c.read("password456")
   assertEquals(slot1?.data, data1)
   assertEquals(slot2?.data, data2)
 })
 
+
 Deno.test("overwriting a slot preserves all other slots", async () => {
-  const c = makeContainer()
+  // Register a custom fast test scheme for Argon2id
+  const { registerScheme } = await import("../src/crypto/registry.ts")
+  const { AES256GCMArgon2 } = await import("../src/crypto/schemes/aes256-gcm-argon2.ts")
+  const { createArgon2KDF } = await import("../src/crypto/kdf.ts")
+  const fastScheme = {
+    ...AES256GCMArgon2,
+    id: 0x97,
+    name: "AES-256-GCM+Argon2id (fast test)",
+    deriveKey: createArgon2KDF(
+      { m: 8, t: 1, p: 1, dkLen: 32 },
+      { m: 8, t: 1, p: 1, dkLen: 32 }
+    )
+  }
+  registerScheme(fastScheme)
+  const c = makeContainer({ scheme: 0x97 })
   const data1 = randomBytes(32)
   const data2 = randomBytes(32)
-  await c.write("password123", data1)
-  await c.write("password456", data2)
-  await c.write("password123", data2)
+  await c.write("password123", data1, { scheme: 0x97 })
+  await c.write("password456", data2, { scheme: 0x97 })
+  await c.write("password123", data2, { scheme: 0x97 })
   const slot1 = await c.read("password123")
   const slot2 = await c.read("password456")
   assertEquals(slot1?.data, data2)
@@ -113,7 +144,7 @@ Deno.test("write with 5-digit PIN passphrase succeeds", async () => {
   registerScheme(fastScheme)
   const c = makeContainer({ scheme: 0x99 })
   const data = randomBytes(32)
-  await c.write("12345", data)
+  await c.write("12345", data, { scheme: 0x99 })
   const slot = await c.read("12345")
   assert(slot)
   assertEquals(slot?.data, data)
@@ -162,12 +193,26 @@ Deno.test("ContainerFullError thrown when all slots are occupied", async () => {
 })
 
 Deno.test("forceNewSlot allocates additional slot instead of overwriting", async () => {
-  const c = makeContainer({ maxSlots: 2 })
+  // Register a custom fast test scheme for Argon2id
+  const { registerScheme } = await import("../src/crypto/registry.ts")
+  const { AES256GCMArgon2 } = await import("../src/crypto/schemes/aes256-gcm-argon2.ts")
+  const { createArgon2KDF } = await import("../src/crypto/kdf.ts")
+  const fastScheme = {
+    ...AES256GCMArgon2,
+    id: 0x96,
+    name: "AES-256-GCM+Argon2id (fast test)",
+    deriveKey: createArgon2KDF(
+      { m: 8, t: 1, p: 1, dkLen: 32 },
+      { m: 8, t: 1, p: 1, dkLen: 32 }
+    )
+  }
+  registerScheme(fastScheme)
+  const c = makeContainer({ maxSlots: 2, scheme: 0x96 })
   const data1 = randomBytes(32)
   const data2 = randomBytes(32)
-  await c.write("password123", data1)
+  await c.write("password123", data1, { scheme: 0x96 })
   await new Promise((r) => setTimeout(r, 5))
-  await c.write("password123", data2, { forceNewSlot: true })
+  await c.write("password123", data2, { forceNewSlot: true, scheme: 0x96 })
   // Read both slots directly by index
   const slots = []
   for (let i = 0; i < 2; ++i) {
