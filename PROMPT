@@ -1,0 +1,856 @@
+You are an expert TypeScript cryptography engineer targeting the Deno runtime.
+Create a production-quality, repository-style implementation of a Plausibly
+Deniable Encrypted Container (PDEC) library from scratch. Do not simplify.
+Every file must be complete and functional. Use Deno idioms throughout —
+no Node.js APIs, no npm packages, no package.json.
+
+The architecture follows the "functional core, imperative shell" pattern:
+all cryptographic logic, layout math, header encoding, and slot scanning are
+pure functions; PDECContainer is a thin stateful shell that owns the file
+handle lifecycle and delegates all logic to the functional core.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+CONCEPT OVERVIEW
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+A PDEC is a single fixed-size binary file that contains multiple independent
+encrypted slots. Each slot is unlocked by a different passphrase. An adversary
+who inspects the file — even with the correct tools — cannot determine:
+  - How many slots exist
+  - How many slots are occupied
+  - Whether any given region contains real data or random padding
+
+A user under duress reveals only their "decoy" passphrase. The real data slot
+is cryptographically indistinguishable from unused space.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+RUNTIME & TOOLING
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Runtime:        Deno >= 1.40
+Test runner:    Deno.test (built-in, no third-party runner)
+Type checking:  deno check
+Linting:        deno lint
+Formatting:     deno fmt
+Dependencies:   deno.json importMap only — all deps from JSR or esm.sh
+
+Required external dependencies (declare in deno.json imports):
+  "@noble/ciphers":   "npm:@noble/ciphers@^1.0"    # XChaCha20-Poly1305
+  "@noble/hashes":    "npm:@noble/hashes@^1.4"     # Argon2id, scrypt
+
+Do NOT use:
+  - Any npm: specifier beyond the two above
+  - Node.js built-ins (fs, crypto, buffer, path) — use Deno.* equivalents
+  - node:crypto — use the Web Crypto API (globalThis.crypto.subtle) instead
+  - Any test framework other than Deno.test
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+REPOSITORY STRUCTURE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+pdec/
+├── deno.json
+├── deno.lock
+├── mod.ts                              # Public API barrel export (Deno convention)
+├── README.md
+│
+├── src/
+│   ├── core/
+│   │   ├── container.ts                # PDECContainer class (imperative shell only)
+│   │   ├── header.ts                   # Pure fns: buildHeader, parseHeader
+│   │   ├── layout.ts                   # Pure fns: computeLayout, slotOffset, validate
+│   │   └── constants.ts                # Magic bytes, version, fixed sizes, AAD builder
+│   │
+│   ├── crypto/
+│   │   ├── registry.ts                 # Map<number, ICryptoScheme>, register, resolve
+│   │   ├── schemes/
+│   │   │   ├── types.ts                # ICryptoScheme interface, EncryptResult type
+│   │   │   ├── aes256-gcm-argon2.ts    # Scheme 0x01 — plain object satisfies ICryptoScheme
+│   │   │   ├── xchacha20-argon2.ts     # Scheme 0x02 — plain object satisfies ICryptoScheme
+│   │   │   └── aes256-gcm-scrypt.ts    # Scheme 0x03 — plain object satisfies ICryptoScheme
+│   │   ├── kdf.ts                      # Pure fns: deriveKeyArgon2, deriveKeyScrypt, withKey
+│   │   └── random.ts                   # Pure fns: randomBytes, shuffleIndices, jitter
+│   │
+│   ├── passphrase/
+│   │   ├── validator.ts                # Pure fn: validatePassphrase
+│   │   ├── normalizer.ts               # Pure fn: normalizePassphrase (NFC)
+│   │   └── strength.ts                 # Pure fn: estimateEntropy
+│   │
+│   ├── slot/
+│   │   ├── scanner.ts                  # Pure fns: scanSlots, tryDecryptSlot
+│   │   └── allocator.ts                # Pure fns: findFreeSlot, buildSlotAAD
+│   │
+│   ├── io/
+│   │   ├── types.ts                    # IRandomAccessHandle interface
+│   │   ├── file-handle.ts              # FileHandle — implements IRandomAccessHandle
+│   │   └── buffer-handle.ts            # BufferHandle — in-memory, used in tests
+│   │
+│   └── errors.ts                       # Typed error classes
+
+└── tests/
+    ├── container.test.ts
+    ├── layout.test.ts
+    ├── crypto.test.ts
+    ├── passphrase.test.ts
+    └── slot.test.ts
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+deno.json
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+{
+  "name": "@pdec/core",
+  "version": "0.1.0",
+  "exports": "./mod.ts",
+  "tasks": {
+    "test":      "deno test --allow-read --allow-write --allow-net tests/",
+    "check":     "deno check mod.ts",
+    "lint":      "deno lint src/ tests/",
+    "fmt":       "deno fmt src/ tests/",
+    "fmt:check": "deno fmt --check src/ tests/"
+  },
+  "imports": {
+    "@noble/ciphers": "npm:@noble/ciphers@^1.0",
+    "@noble/hashes":  "npm:@noble/hashes@^1.4"
+  },
+  "lint": {
+    "rules": {
+      "include": [
+        "no-explicit-any",
+        "no-unused-vars",
+        "explicit-function-return-type",
+        "explicit-module-boundary-types",
+        "no-inferrable-types",
+        "prefer-const"
+      ]
+    }
+  },
+  "fmt": {
+    "useTabs":     false,
+    "lineWidth":   100,
+    "indentWidth": 2,
+    "semiColons": false,
+    "singleQuote": false,
+    "proseWrap":   "preserve"
+  }
+}
+
+Note: Deno 1.40+ discovers both *_test.ts and *.test.ts automatically.
+The test task requires no --filter flag.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ARCHITECTURE: FUNCTIONAL CORE, IMPERATIVE SHELL
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+The library is divided into two strict layers. No function in the functional
+core may access Deno.open, Deno.fsync, or any IRandomAccessHandle. All IO
+is performed exclusively by PDECContainer and the IO backends.
+
+FUNCTIONAL CORE — pure functions, no IO, no side effects:
+  src/core/layout.ts        computeLayout, slotOffset, validateLayout
+  src/core/header.ts        buildHeader, parseHeader
+  src/core/constants.ts     MAGIC, VERSION, HEADER_SIZE, buildAAD
+  src/crypto/kdf.ts         deriveKeyArgon2, deriveKeyScrypt, withKey
+  src/crypto/random.ts      randomBytes, shuffleIndices, jitter
+  src/crypto/schemes/*.ts   ICryptoScheme plain objects (no class syntax)
+  src/crypto/registry.ts    resolve(id), register(scheme)
+  src/slot/scanner.ts       scanSlots, tryDecryptSlot
+  src/slot/allocator.ts     findFreeSlot, buildSlotAAD
+  src/passphrase/*.ts       validatePassphrase, normalizePassphrase, estimateEntropy
+
+IMPERATIVE SHELL — owns state, performs IO:
+  src/core/container.ts     PDECContainer class
+  src/io/file-handle.ts     FileHandle
+  src/io/buffer-handle.ts   BufferHandle
+
+PDECContainer's methods do exactly three things:
+  1. Read raw bytes from the handle at computed offsets
+  2. Pass those bytes to functional core functions
+  3. Write the returned bytes back to the handle
+
+No encryption, decryption, layout math, or header parsing logic lives
+inside container.ts. It is glue only.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+FUNCTIONAL CORE — DETAILED SPECIFICATIONS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+── src/core/constants.ts ──────────────────────────────────────
+
+  export const MAGIC       = new Uint8Array([0xDE, 0xC0, 0x1A, 0x57]);
+  export const VERSION     = 0x01;
+  export const HEADER_SIZE = 64;
+
+  /** Build the 6-byte AEAD additional data that binds ciphertext to its
+   *  physical slot position, preventing block-relocation attacks. */
+  export function buildAAD(slotIndex: number, schemeId: number): Uint8Array
+
+── src/core/layout.ts ─────────────────────────────────────────
+
+  export interface ContainerLayout {
+    readonly totalSize:     number;
+    readonly maxSlots:      number;
+    readonly slotSize:      number;   // floor(totalSize/maxSlots) aligned to 64 bytes
+    readonly defaultScheme: number;
+  }
+
+  /** Compute and validate container geometry. Throws ContainerTooSmallError
+   *  if totalSize < 1 MiB or if slotSize cannot fit HEADER_SIZE + 1 byte. */
+  export function computeLayout(options: {
+    totalSize?:     number;   // default 67108864 (64 MiB)
+    maxSlots?:      number;   // default 8, max 32
+    defaultScheme?: number;   // default 0x01
+  }): ContainerLayout
+
+  /** Return the byte offset of slot i within the container file. */
+  export function slotOffset(layout: ContainerLayout, i: number): number
+
+── src/core/header.ts ─────────────────────────────────────────
+
+  export interface SlotHeader {
+    readonly magic:       Uint8Array;  // 4 bytes
+    readonly version:     number;
+    readonly schemeId:    number;
+    readonly salt:        Uint8Array;  // 16 bytes
+    readonly nonce:       Uint8Array;  // 12 bytes (XChaCha20 24-byte nonce stored
+                                      // in payload section, padded here to 12)
+    readonly payloadLen:  number;
+    readonly writtenAtMs: number;      // Unix ms as JS number (safe to year 2255)
+    readonly slotNonce:   Uint8Array;  // 16 bytes, random per write
+  }
+
+  /** Encode a SlotHeader into exactly HEADER_SIZE bytes using DataView
+   *  for all multi-byte integers (little-endian). */
+  export function buildHeader(header: SlotHeader): Uint8Array
+
+  /** Decode HEADER_SIZE bytes into a SlotHeader. Throws VersionMismatchError
+   *  if version field is not 0x01. Does NOT validate magic here — magic is
+   *  verified after decryption succeeds, as part of slot authentication. */
+  export function parseHeader(bytes: Uint8Array): SlotHeader
+
+── src/crypto/schemes/types.ts ────────────────────────────────
+
+  export type PassphraseMode = 'pin' | 'unicode';
+
+  export interface EncryptResult {
+    readonly ciphertext: Uint8Array;
+    readonly tag:        Uint8Array;
+  }
+
+  /** A cryptographic scheme is a plain record of functions — not a class.
+   *  Each scheme object must be declared with `satisfies ICryptoScheme`. */
+  export interface ICryptoScheme {
+    readonly id:         number;
+    readonly name:       string;
+    readonly keyBytes:   number;
+    readonly nonceBytes: number;
+    readonly tagBytes:   number;
+
+    readonly deriveKey: (
+      passphrase: string,
+      salt:       Uint8Array,
+      mode:       PassphraseMode,
+    ) => Promise<Uint8Array>;
+
+    readonly encrypt: (
+      key:       Uint8Array,
+      nonce:     Uint8Array,
+      plaintext: Uint8Array,
+      aad:       Uint8Array,
+    ) => Promise<EncryptResult>;
+
+    readonly decrypt: (
+      key:        Uint8Array,
+      nonce:      Uint8Array,
+      ciphertext: Uint8Array,
+      tag:        Uint8Array,
+      aad:        Uint8Array,
+    ) => Promise<Uint8Array>;
+  }
+
+── src/crypto/schemes/aes256-gcm-argon2.ts ────────────────────
+
+  Declare as a plain object literal, not a class:
+
+  export const AES256GCMArgon2 = {
+    id:         0x01,
+    name:       'AES-256-GCM+Argon2id',
+    keyBytes:   32,
+    nonceBytes: 12,
+    tagBytes:   16,
+
+    deriveKey: async (passphrase, salt, mode) => {
+      // unicode: argon2id(pass, { salt, m: 65536,  t: 3,  p: 1, dkLen: 32 })
+      // pin:     argon2id(pass, { salt, m: 262144, t: 10, p: 1, dkLen: 32 })
+    },
+
+    encrypt: async (key, nonce, plaintext, aad) => {
+      // crypto.subtle AES-GCM, tagLength: 128
+      // Split output at (output.length - 16) → { ciphertext, tag }
+    },
+
+    decrypt: async (key, nonce, ciphertext, tag, aad) => {
+      // Concatenate ciphertext || tag, pass to subtle.decrypt
+      // Catch DOMException, convert to undefined at boundary,
+      // rethrow as DecryptionFailedError
+    },
+  } satisfies ICryptoScheme;
+
+── src/crypto/schemes/xchacha20-argon2.ts ─────────────────────
+
+  export const XChaCha20Argon2 = {
+    id:         0x02,
+    name:       'XChaCha20-Poly1305+Argon2id',
+    keyBytes:   32,
+    nonceBytes: 24,
+    tagBytes:   16,
+
+    deriveKey: async (passphrase, salt, mode) => {
+      // Same Argon2id parameters as AES256GCMArgon2
+    },
+
+    encrypt: async (key, nonce, plaintext, aad) => {
+      // import { xchacha20poly1305 } from '@noble/ciphers/chacha'
+      // cipher.encrypt(plaintext) → ciphertext||tag (tag = last 16 bytes)
+      // Split and return { ciphertext, tag }
+    },
+
+    decrypt: async (key, nonce, ciphertext, tag, aad) => {
+      // Concatenate ciphertext || tag, pass to cipher.decrypt
+      // @noble/ciphers throws on auth failure — catch, convert to
+      // undefined at the boundary, rethrow as DecryptionFailedError
+    },
+  } satisfies ICryptoScheme;
+
+── src/crypto/schemes/aes256-gcm-scrypt.ts ────────────────────
+
+  export const AES256GCMScrypt = {
+    id:         0x03,
+    name:       'AES-256-GCM+scrypt',
+    keyBytes:   32,
+    nonceBytes: 12,
+    tagBytes:   16,
+
+    deriveKey: async (passphrase, salt, mode) => {
+      // unicode: scrypt(pass, salt, { N: 131072,  r: 8, p: 1, dkLen: 32 })
+      // pin:     scrypt(pass, salt, { N: 1048576, r: 8, p: 2, dkLen: 32 })
+    },
+
+    encrypt: async (key, nonce, plaintext, aad) => {
+      // Same AES-256-GCM logic as AES256GCMArgon2
+    },
+
+    decrypt: async (key, nonce, ciphertext, tag, aad) => {
+      // Same AES-256-GCM logic as AES256GCMArgon2
+    },
+  } satisfies ICryptoScheme;
+
+── src/crypto/registry.ts ─────────────────────────────────────
+
+  Module-level Map populated at import time. No class, no singleton pattern.
+
+  const _registry = new Map<number, ICryptoScheme>([
+    [AES256GCMArgon2.id, AES256GCMArgon2],
+    [XChaCha20Argon2.id, XChaCha20Argon2],
+    [AES256GCMScrypt.id, AES256GCMScrypt],
+  ]);
+
+  /** Resolve a scheme by ID. Throws UnknownSchemeError if not registered. */
+  export function resolveScheme(id: number): ICryptoScheme
+
+  /** Register a custom scheme. Throws if ID already registered. */
+  export function registerScheme(scheme: ICryptoScheme): void
+
+── src/crypto/kdf.ts ──────────────────────────────────────────
+
+  /** Derive a key with Argon2id. Adjusts cost for PIN mode. */
+  export async function deriveKeyArgon2(
+    passphrase: string,
+    salt:       Uint8Array,
+    mode:       PassphraseMode,
+  ): Promise<Uint8Array>
+
+  /** Derive a key with scrypt. Adjusts cost for PIN mode. */
+  export async function deriveKeyScrypt(
+    passphrase: string,
+    salt:       Uint8Array,
+    mode:       PassphraseMode,
+  ): Promise<Uint8Array>
+
+  /** Zero the key buffer in a finally block after fn completes or throws.
+   *  All encrypt/decrypt call sites must use this wrapper. */
+  export async function withKey<T>(
+    key: Uint8Array,
+    fn:  (key: Uint8Array) => Promise<T>,
+  ): Promise<T>
+
+── src/crypto/random.ts ───────────────────────────────────────
+
+  /** Return n cryptographically random bytes. */
+  export function randomBytes(n: number): Uint8Array
+
+  /** Fisher-Yates shuffle of [0..n-1] using CSPRNG. Never Math.random(). */
+  export function shuffleIndices(n: number): number[]
+
+  /** Wait a CSPRNG-derived duration between minMs and maxMs. */
+  export async function jitter(minMs: number, maxMs: number): Promise<void>
+
+── src/slot/scanner.ts ────────────────────────────────────────
+
+  export interface ScanResult {
+    readonly found:     boolean;
+    readonly slotIndex: number;
+    readonly header:    SlotHeader;
+    readonly payload:   Uint8Array;
+  }
+
+  /** Try to decrypt one slot's raw bytes with the given passphrase.
+   *  Returns undefined on any AEAD failure. Never throws on auth failure.
+   *  Pure function — receives raw bytes, returns a result or undefined. */
+  export async function tryDecryptSlot(
+    slotBytes:  Uint8Array,
+    slotIndex:  number,
+    passphrase: string,
+    layout:     ContainerLayout,
+  ): Promise<ScanResult | undefined>
+
+  /** Scan all slots in the given order, always attempting every slot.
+   *  Returns the first successful ScanResult, or undefined if none matched.
+   *  The order array must be pre-shuffled by the caller (container.ts).
+   *
+   *  Implementation notes:
+   *  - Always call tryDecryptSlot for every index in order. No early return.
+   *  - Track result with: let result: ScanResult | undefined = undefined;
+   *    then inside the loop: if (candidate !== undefined) result = candidate;
+   *  - This ensures the loop body executes identically regardless of which
+   *    slot matched, preventing branch-timing leakage. */
+  export async function scanSlots(
+    readSlot:   (i: number) => Promise<Uint8Array>,
+    order:      number[],
+    passphrase: string,
+    layout:     ContainerLayout,
+  ): Promise<ScanResult | undefined>
+
+── src/slot/allocator.ts ──────────────────────────────────────
+
+  /** Return the index of the first slot that appears empty (tryDecryptSlot
+   *  returns undefined for all passphrases). Throws ContainerFullError
+   *  if all slots are occupied. Pure function — caller provides slot reader. */
+  export async function findFreeSlot(
+    readSlot: (i: number) => Promise<Uint8Array>,
+    layout:   ContainerLayout,
+  ): Promise<number>
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PASSPHRASE POLICY (src/passphrase/validator.ts)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  export type PassphraseMode = 'pin' | 'unicode';
+
+  export interface PassphraseValidationResult {
+    readonly valid:    boolean;
+    readonly mode:     PassphraseMode;
+    readonly warnings: string[];
+    readonly errors:   string[];
+  }
+
+  /** Validate a passphrase string. Pure function — no IO, no side effects.
+   *
+   *  PIN mode:     /^\d{5}$/ exactly. Emits low-entropy warning.
+   *  Unicode mode: [...str].length >= 8 codepoints. Rejects all-digit strings
+   *                of any length (user must use PIN mode explicitly).
+   *                Rejects whitespace-only strings.
+   *
+   *  Never returns null. Uses undefined internally for absent values. */
+  export function validatePassphrase(input: string): PassphraseValidationResult
+
+  src/passphrase/normalizer.ts:
+  /** NFC-normalize a passphrase before any KDF operation.
+   *  'e\u0301' and '\u00e9' must produce identical KDF input. */
+  export function normalizePassphrase(input: string): string
+
+  src/passphrase/strength.ts:
+  /** Estimate passphrase entropy in bits. Returns a rough estimate only —
+   *  used for warnings, not enforcement. No external dependencies. */
+  export function estimateEntropy(input: string): number
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+CONTAINER FILE FORMAT
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+The container is a flat binary file of exactly `totalSize` bytes.
+No global header. No plaintext magic bytes. No slot count field.
+The entire file must be indistinguishable from random bytes without a key.
+
+Each slot layout:
+
+  [ ENCRYPTED BLOB | RANDOM PADDING ]
+   ↑                ↑
+   HEADER_SIZE +    slotSize − (HEADER_SIZE + payloadLen + tagBytes)
+   payloadLen +
+   tagBytes bytes
+
+The encrypted blob is one AEAD unit: encrypt(header_bytes || payload_bytes).
+The 16-byte tag is written immediately after the ciphertext.
+The remainder of the slot is fresh CSPRNG random bytes on every write.
+
+Slot header layout (plaintext, inside the AEAD):
+
+  Offset  Size  Field
+  ─────────────────────────────────────────────────────────────
+   0       4    Magic: 0xDE 0xC0 0x1A 0x57  (verified post-decrypt)
+   4       1    Format version: 0x01
+   5       1    Scheme ID
+   6       2    Reserved: 0x00 0x00
+   8      16    KDF salt (random per write)
+   24     12    Nonce/IV (12 bytes; XChaCha20 24-byte nonce stored in
+                the payload section, not the header)
+   36      4    Payload byte length (uint32 LE, DataView)
+   40      8    Write timestamp Unix ms (uint64 LE, two uint32 DataView writes)
+   48     16    Random slot nonce (anti-correlation between slots)
+  ─────────
+   64     HEADER_SIZE
+
+AEAD additional data (6 bytes, not encrypted):
+  buildAAD(slotIndex, schemeId) = MAGIC(4) || slotIndex(1) || schemeId(1)
+
+KDF input: encode(normalizePassphrase(passphrase)) || slotNonce bytes.
+
+On AEAD tag failure, tryDecryptSlot returns undefined (never throws).
+The magic check (0xDE C0 1A 57) is performed after successful AEAD
+decryption as a secondary sanity check.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+IMPERATIVE SHELL — PDECContainer (src/core/container.ts)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+PDECContainer is the only class in the library.
+It owns one IRandomAccessHandle and one ContainerLayout.
+It contains NO encryption, decryption, layout math, or header logic.
+Every method body is a sequence of: read bytes → call functional core → write bytes.
+
+  export interface PDECCreateOptions {
+    path:       string;
+    totalSize?: number;    // default 67108864
+    maxSlots?:  number;    // default 8, max 32
+    scheme?:    number;    // default 0x01
+    overwrite?: boolean;   // default false
+  }
+
+  export interface WriteOptions {
+    scheme?:       number;   // per-slot scheme override
+    forceNewSlot?: boolean;  // allocate new slot even if passphrase has one
+  }
+
+  export interface SlotData {
+    readonly data:      Uint8Array;
+    readonly schemeId:  number;
+    readonly writtenAt: Date;
+    readonly slotIndex: number;
+  }
+
+  export class PDECContainer {
+
+    /** Create a new container file. Fill entirely with randomBytes() before
+     *  returning. Throw if file exists and overwrite is false. */
+    static async create(options: PDECCreateOptions): Promise<PDECContainer>
+
+    /** Open an existing container file. Does not validate any plaintext.
+     *  Infers layout from file size using computeLayout defaults. */
+    static async open(path: string): Promise<PDECContainer>
+
+    /** Internal factory used by tests — accepts any IRandomAccessHandle.
+     *  Not exported from mod.ts. */
+    static _fromHandle(
+      handle: IRandomAccessHandle,
+      layout: ContainerLayout,
+    ): PDECContainer
+
+    /** Shuffle slot indices, scan all slots, apply jitter.
+     *  Returns SlotData on success, undefined if no slot matched.
+     *  Delegates entirely to shuffleIndices, scanSlots, jitter. */
+    async read(passphrase: string): Promise<SlotData | undefined>
+
+    /** Validate passphrase, find or allocate slot, encrypt, write, sync.
+     *  Delegates to validatePassphrase, findFreeSlot, scanSlots,
+     *  scheme.encrypt, buildHeader. */
+    async write(
+      passphrase: string,
+      data:       Uint8Array,
+      options?:   WriteOptions,
+    ): Promise<void>
+
+    /** Find slot, overwrite with randomBytes, sync.
+     *  Returns false if passphrase had no slot, true if wiped.
+     *  Delegates to scanSlots, randomBytes. */
+    async wipe(passphrase: string): Promise<boolean>
+
+    get layout(): ContainerLayout
+
+    async close(): Promise<void>
+  }
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+IO BACKENDS (src/io/)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  src/io/types.ts:
+
+  export interface IRandomAccessHandle {
+    read(offset: number, length: number): Promise<Uint8Array>;
+    write(offset: number, data: Uint8Array): Promise<void>;
+    sync(): Promise<void>;
+    close(): Promise<void>;
+    readonly size: number;
+  }
+
+  src/io/file-handle.ts — FileHandle:
+    - Constructor takes an already-opened Deno.FsFile and its size
+    - read():  seek then loop Deno.FsFile.read() until buffer full
+    - write(): seek then loop Deno.FsFile.write() until all bytes written
+    - sync():  Deno.fsync(this.file.rid)
+    - close(): this.file.close()
+    - Wrap Deno errors in IOError
+
+    Full read loop (Deno.FsFile.read returns number | null at the boundary —
+    convert to undefined immediately, do not propagate null inward):
+
+      await this.file.seek(offset, Deno.SeekMode.Start);
+      let pos = 0;
+      while (pos < length) {
+        const n = await this.file.read(buf.subarray(pos));
+        // Deno runtime returns null at EOF — convert to undefined at boundary
+        if (n === null || n === undefined) throw new IOError('Unexpected EOF');
+        pos += n;
+      }
+
+  src/io/buffer-handle.ts — BufferHandle:
+    - Constructor takes a Uint8Array of fixed size
+    - All operations synchronous internally, wrapped in Promise.resolve()
+    - sync(): no-op
+    - Used exclusively in tests
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ERROR TYPES (src/errors.ts)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+All extend PDECError (extends Error). Set this.name = this.constructor.name.
+No error message may reference null — use undefined in any internal context.
+
+  class PDECError              extends Error
+  class DecryptionFailedError  extends PDECError
+  class InvalidPassphraseError extends PDECError
+  class ContainerFullError     extends PDECError
+  class ContainerTooSmallError extends PDECError
+  class UnknownSchemeError     extends PDECError
+  class IOError                extends PDECError  // cause?: unknown
+  class VersionMismatchError   extends PDECError
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SECURITY REQUIREMENTS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1. FULL SLOT SCAN
+   scanSlots() always iterates every slot index. Never break or return early.
+   Use an accumulator variable updated with assignment, not a branching return:
+     let result: ScanResult | undefined = undefined;
+     for (const i of order) {
+       const candidate = await tryDecryptSlot(...);
+       if (candidate !== undefined) result = candidate;
+     }
+
+2. TIMING JITTER
+   After scanSlots() completes, always call jitter(50, 200) before returning
+   from read(). Called in container.ts, not in scanner.ts.
+
+3. RANDOM SCAN ORDER
+   container.read() calls shuffleIndices(layout.maxSlots) and passes the
+   result as the `order` argument to scanSlots(). Never Math.random().
+
+4. NO ORACLE ERRORS
+   read() returns undefined for all failure cases.
+   tryDecryptSlot() returns undefined on AEAD failure — never throws.
+
+5. CSPRNG WIPE ON SLOT CLEAR
+   wipe() and overwrite-before-write both use randomBytes() — not zeroes.
+
+6. KEY ZEROING via withKey
+   Every call to scheme.deriveKey() must be wrapped with withKey():
+     await withKey(await scheme.deriveKey(pass, salt, mode), async (key) => {
+       return await scheme.encrypt(key, nonce, plaintext, aad);
+     });
+
+7. AAD LOCATION BINDING
+   buildAAD(slotIndex, schemeId) is passed as `aad` to every encrypt/decrypt.
+   This prevents ciphertext relocation between slots.
+
+8. NO SECRET LEAKAGE
+   No passphrase, key, nonce, or plaintext in any Error message or log output.
+
+9. NULL BOUNDARY RULE
+   null must never appear in library code. The only permitted contact with null
+   is at external API boundaries (e.g. Deno.FsFile.read() returning null).
+   Convert to undefined immediately at the boundary and never propagate inward.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+TESTS  — Deno.test, *.test.ts convention, BufferHandle only
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+All test files use the *.test.ts suffix.
+All tests import from 'jsr:@std/assert'.
+All tests use PDECContainer._fromHandle(new BufferHandle(...), layout).
+No disk I/O. No --allow-read or --allow-write needed for the test task.
+
+To run all tests:     deno task test
+To run single file:   deno test tests/container.test.ts
+
+Import style in every test file:
+  import { assertEquals, assertRejects, assert, assertInstanceOf }
+    from 'jsr:@std/assert';
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+tests/container.test.ts
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Deno.test('write and read round-trip — scheme 0x01 AES-GCM+Argon2id')
+Deno.test('write and read round-trip — scheme 0x02 XChaCha20+Argon2id')
+Deno.test('write and read round-trip — scheme 0x03 AES-GCM+scrypt')
+Deno.test('read returns undefined for wrong passphrase')
+Deno.test('read returns undefined on completely empty container')
+Deno.test('wipe makes slot unreadable — returns undefined on subsequent read')
+Deno.test('wipe returns false when passphrase has no slot')
+Deno.test('two slots are independently accessible')
+Deno.test('overwriting a slot preserves all other slots')
+Deno.test('write with 5-digit PIN passphrase succeeds')
+Deno.test('write with Unicode passphrase containing emoji succeeds')
+Deno.test('write with Unicode passphrase containing CJK characters succeeds')
+Deno.test('write with Unicode passphrase containing RTL characters succeeds')
+Deno.test('container with maxSlots=1 works correctly')
+Deno.test('ContainerFullError thrown when all slots are occupied')
+Deno.test('forceNewSlot allocates additional slot instead of overwriting')
+Deno.test('SlotData.writtenAt is within 5 seconds of current time')
+Deno.test('SlotData.schemeId matches the scheme used to write')
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+tests/layout.test.ts
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Deno.test('slotSize is floor(totalSize / maxSlots) aligned down to 64 bytes')
+Deno.test('slotOffset(layout, i) equals i * slotSize')
+Deno.test('default totalSize is 67108864')
+Deno.test('default maxSlots is 8')
+Deno.test('ContainerTooSmallError for totalSize < 1 MiB')
+Deno.test('ContainerTooSmallError when slotSize < HEADER_SIZE + 1')
+Deno.test('alignment works when totalSize is not divisible by maxSlots')
+Deno.test('maxSlots=32 with totalSize=64MiB produces correct geometry')
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+tests/crypto.test.ts
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Deno.test('scheme 0x01: encrypt then decrypt returns original plaintext')
+Deno.test('scheme 0x02: encrypt then decrypt returns original plaintext')
+Deno.test('scheme 0x03: encrypt then decrypt returns original plaintext')
+Deno.test('scheme 0x01: flipped ciphertext byte fails AEAD authentication')
+Deno.test('scheme 0x02: flipped ciphertext byte fails AEAD authentication')
+Deno.test('scheme 0x03: flipped ciphertext byte fails AEAD authentication')
+Deno.test('scheme 0x01: modified AAD fails AEAD authentication')
+Deno.test('scheme 0x02: modified AAD fails AEAD authentication')
+Deno.test('scheme 0x03: modified AAD fails AEAD authentication')
+Deno.test('PIN mode uses higher Argon2id memory cost than unicode mode')
+Deno.test('PIN mode uses higher scrypt N than unicode mode')
+Deno.test('withKey zeroes key buffer after fn resolves successfully')
+Deno.test('withKey zeroes key buffer even when fn throws')
+Deno.test('resolving unknown scheme ID throws UnknownSchemeError')
+Deno.test('registerScheme adds a custom scheme resolvable by ID')
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+tests/passphrase.test.ts
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Deno.test('valid 5-digit PIN is accepted with mode=pin')
+Deno.test('4-digit string is rejected')
+Deno.test('6-digit string is rejected')
+Deno.test('unicode password of exactly 8 codepoints is accepted')
+Deno.test('unicode password of 7 codepoints is rejected')
+Deno.test('8 emoji codepoints accepted — counts codepoints not UTF-16 units')
+Deno.test('all-digit string of length >= 8 is rejected')
+Deno.test('whitespace-only string of length 8 is rejected')
+Deno.test('empty string is rejected')
+Deno.test('PIN mode result includes a low-entropy warning')
+Deno.test('NFC normalization: U+00E9 and e+U+0301 produce identical KDF input')
+Deno.test('normalizePassphrase is idempotent')
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+tests/slot.test.ts
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Deno.test('fresh container — all slots return undefined on scan')
+Deno.test('allocated slot is found by subsequent scanSlots call')
+Deno.test('scanSlots with shuffled order returns same data as sequential order')
+Deno.test('read() duration is >= 50ms even on empty container')
+Deno.test('read() duration is <= 600ms for 8-slot container on scheme 0x01')
+Deno.test('tryDecryptSlot returns undefined for random bytes — no throw')
+Deno.test('tryDecryptSlot returns undefined for wrong passphrase on real slot')
+Deno.test('AAD mismatch causes tryDecryptSlot to return undefined')
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+README.md  — write in full, include all sections below
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1.  Concept: plausible deniability and why it matters
+2.  Threat model: what PDEC protects against and what it does NOT
+3.  Architecture: functional core / imperative shell diagram (ASCII art)
+4.  Quickstart: complete runnable Deno example
+      import { PDECContainer } from './mod.ts';
+      // create → write two slots → read → wipe
+5.  Deno permissions required and why
+6.  Passphrase policy table (PIN vs Unicode, rules, entropy notes)
+7.  Cryptographic scheme comparison table:
+    | ID   | KDF      | Cipher             | Nonce | Tag | Notes       |
+    |------|----------|--------------------|-------|-----|-------------|
+    | 0x01 | Argon2id | AES-256-GCM        | 12 B  | 16B | default     |
+    | 0x02 | Argon2id | XChaCha20-Poly1305 | 24 B  | 16B | large nonce |
+    | 0x03 | scrypt   | AES-256-GCM        | 12 B  | 16B | CPU-hard    |
+8.  Binary file format diagram (ASCII art)
+9.  Security properties with references to implementing files
+10. Known limitations:
+      - OS swap / hibernation may expose key material
+      - File access timestamps leak usage (use noatime)
+      - KDF runs on caller thread, no Web Worker isolation
+      - No mlock equivalent in Deno (memory not pinned)
+      - File change detection: adversary who snapshots before and
+        after a write can confirm a slot was modified
+11. Running tests:
+      deno task test                        # all tests
+      deno test tests/container.test.ts     # single file
+    Test files follow the *.test.ts naming convention.
+12. Dependency rationale: @noble/hashes and @noble/ciphers
+    (audited, zero dependencies, no WASM, pure TypeScript)
+13. License: MIT
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+FINAL INSTRUCTIONS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+- Output every file in full. Never truncate. No placeholder comments such as
+  '// ... rest of implementation'. Every function body must be complete.
+- Only the two npm dependencies in deno.json may be used. No others.
+- All imports must use specifiers from deno.json's imports map for external
+  deps, and relative paths with explicit .ts extensions for internal ones:
+    import { buildAAD } from '../core/constants.ts';
+- Use Uint8Array everywhere in the public API. Never expose Buffer or string
+  for binary data parameters or return values.
+- All async functions must be properly awaited. No floating promises.
+- Use DataView for all multi-byte integer encoding (little-endian).
+- For uint64 timestamps: write as two uint32 values (low and high word)
+  since JS lacks native uint64 primitives.
+- Use satisfies ICryptoScheme on every scheme object declaration.
+- Every exported symbol must have a JSDoc comment.
+- Prefer undefined over null everywhere in library code. Never use null as
+  a return value, parameter type, or variable initializer. The sole exception
+  is at external API boundaries where the Deno runtime or an npm module
+  returns null — convert to undefined immediately at that boundary and never
+  propagate null further into the codebase.
+- deno lint must pass with zero warnings on the completed output.
+- deno fmt must produce no diffs on the completed output.

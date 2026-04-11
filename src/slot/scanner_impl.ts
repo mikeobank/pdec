@@ -1,0 +1,56 @@
+import type { SlotHeader } from "../core/header.ts"
+import type { ContainerLayout } from "../core/layout.ts"
+import { parseHeader } from "../core/header.ts"
+import { resolveScheme } from "../crypto/registry.ts"
+import { buildAAD, HEADER_SIZE } from "../core/constants.ts"
+import { normalizePassphrase } from "../passphrase/normalizer.ts"
+
+/**
+ * Internal implementation for tryDecryptSlot.
+ */
+export const tryDecryptSlot = async (
+  slotBytes: Uint8Array,
+  slotIndex: number,
+  passphrase: string,
+  _layout: ContainerLayout
+): Promise<import("./scanner.ts").ScanResult | undefined> => {
+  if (slotBytes.length < HEADER_SIZE) return undefined
+  const headerBytes = slotBytes.subarray(0, HEADER_SIZE)
+  let header: SlotHeader
+  try {
+    header = parseHeader(headerBytes)
+  } catch {
+    return undefined
+  }
+  const scheme = resolveScheme(header.schemeId)
+  const aad = buildAAD(slotIndex, header.schemeId)
+  const kdfInput = normalizePassphrase(passphrase)
+  // Use the same mode detection as validatePassphrase
+  let mode: "pin" | "unicode" = "unicode"
+  if (/^\d{5}$/.test(passphrase)) {
+    mode = "pin"
+  }
+  let plaintext: Uint8Array
+  try {
+    const key = await scheme.deriveKey(kdfInput + String.fromCharCode(...header.slotNonce), header.salt, mode)
+    let offset = HEADER_SIZE
+    let nonce = header.nonce
+    if (scheme.nonceBytes > 12) {
+      nonce = slotBytes.subarray(offset, offset + scheme.nonceBytes)
+      offset += scheme.nonceBytes
+    }
+    const ct = slotBytes.subarray(offset, offset + header.payloadLen)
+    const tag = slotBytes.subarray(offset + header.payloadLen, offset + header.payloadLen + scheme.tagBytes)
+    plaintext = await scheme.decrypt(key, nonce, ct, tag, aad)
+  } catch {
+    return undefined
+  }
+  // Magic check (0xDE C0 1A 57) after AEAD
+  if (!header.magic.every((b, i) => b === [0xDE, 0xC0, 0x1A, 0x57][i])) return undefined
+  return {
+    found: true,
+    slotIndex,
+    header,
+    payload: plaintext
+  }
+}
