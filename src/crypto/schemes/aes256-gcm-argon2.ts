@@ -35,7 +35,7 @@ export const AES256GCMArgon2 = {
     const tagBytes = 16
     const ciphertext = buf.subarray(0, buf.length - tagBytes)
     const tag = buf.subarray(buf.length - tagBytes)
-    return { ciphertext, tag } as EncryptResult
+    return { ciphertext, tag }
   },
 
   decrypt: async (key: Uint8Array, nonce: Uint8Array, ciphertext: Uint8Array, tag: Uint8Array, aad: Uint8Array): Promise<Uint8Array> => {

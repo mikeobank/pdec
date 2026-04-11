@@ -19,7 +19,6 @@ export const tryDecryptSlot = (
   slotIndex: number,
   passphrase: string,
   layout: ContainerLayout
-// ...existing code...
 ): Promise<ScanResult | undefined> => {
   // Implementation in scanner_impl.ts for clarity
   return _tryDecryptSlot(slotBytes, slotIndex, passphrase, layout)

@@ -1,6 +1,5 @@
 import type { IRandomAccessHandle } from "../io/types.ts"
 import { FileHandle } from "../io/file-handle.ts"
-// ...existing code...
 import { computeLayout, slotOffset } from "./layout.ts"
 import { buildHeader } from "./header.ts"
 import { HEADER_SIZE } from "./constants.ts"
@@ -121,7 +120,7 @@ export class PDECContainer {
           schemeId: result.header.schemeId,
           writtenAt: new Date(result.header.writtenAtMs),
           slotIndex: result.slotIndex
-        } as SlotData
+        }
       })
     )
     await jitter(50, 200)
@@ -170,12 +169,12 @@ export class PDECContainer {
     const header = buildHeader({
       magic: new Uint8Array([0xDE, 0xC0, 0x1A, 0x57]),
       version: 0x01,
-      schemeId: schemeId as number,
-      salt: salt as Uint8Array,
+      schemeId: schemeId,
+      salt: salt,
       nonce: scheme.nonceBytes === 12 ? nonce : nonce.subarray(0, 12),
       payloadLen: data.length,
-      writtenAtMs: writtenAtMs as number,
-      slotNonce: slotNonce as Uint8Array
+      writtenAtMs: writtenAtMs,
+      slotNonce: slotNonce
     })
     const aad = buildAAD(slotIndex, schemeId)
     await withKey(await scheme.deriveKey(norm + String.fromCharCode(...slotNonce), salt, mode), (key) => {

@@ -24,7 +24,7 @@ export const XChaCha20Argon2 = {
     const tagBytes = 16
     const ciphertext = out.subarray(0, out.length - tagBytes)
     const tag = out.subarray(out.length - tagBytes)
-    return Promise.resolve({ ciphertext, tag } as EncryptResult)
+    return Promise.resolve({ ciphertext, tag })
   },
 
   decrypt: (key: Uint8Array, nonce: Uint8Array, ciphertext: Uint8Array, tag: Uint8Array, aad: Uint8Array): Promise<Uint8Array> => {
