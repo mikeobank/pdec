@@ -1,7 +1,5 @@
-/**
- * Passphrase mode: 'pin' or 'unicode'.
- */
-export type PassphraseMode = "pin" | "unicode"
+import type { PassphraseMode } from "../../passphrase/validator.ts"
+export type { PassphraseMode } from "../../passphrase/validator.ts"
 
 /**
  * AEAD encryption result.
@@ -22,7 +20,7 @@ export interface ICryptoScheme {
   readonly tagBytes: number
   readonly forceMode?: PassphraseMode
   readonly deriveKey: (
-    passphrase: string,
+    passphrase: Uint8Array,
     salt: Uint8Array,
     mode: PassphraseMode
   ) => Uint8Array

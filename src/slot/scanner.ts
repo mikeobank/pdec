@@ -1,5 +1,4 @@
 import type { SlotHeader } from "../core/header.ts"
-import type { ContainerLayout } from "../core/layout.ts"
 import { tryDecryptSlot as _tryDecryptSlot } from "./scanner_impl.ts"
 
 export interface ScanResult {
@@ -16,11 +15,10 @@ export interface ScanResult {
 export const tryDecryptSlot = (
   slotBytes: Uint8Array,
   slotIndex: number,
-  passphrase: string,
-  layout: ContainerLayout
+  passphrase: string
 ): Promise<ScanResult | undefined> => {
   // Implementation in scanner_impl.ts for clarity
-  return _tryDecryptSlot(slotBytes, slotIndex, passphrase, layout)
+  return _tryDecryptSlot(slotBytes, slotIndex, passphrase)
 }
 
 /**
@@ -31,13 +29,12 @@ export const tryDecryptSlot = (
 export const scanSlots = async (
   readSlot: (i: number) => Promise<Uint8Array>,
   order: number[],
-  passphrase: string,
-  layout: ContainerLayout
+  passphrase: string
 ): Promise<ScanResult | undefined> => {
   let latest: ScanResult | undefined = undefined
   for (const i of order) {
     const slotBytes = await readSlot(i)
-    const candidate = await tryDecryptSlot(slotBytes, i, passphrase, layout)
+    const candidate = await tryDecryptSlot(slotBytes, i, passphrase)
     if (candidate !== undefined) {
       if (
         !latest ||

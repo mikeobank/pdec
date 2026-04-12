@@ -4,7 +4,7 @@
 
 export const MAGIC = new Uint8Array([0xDE, 0xC0, 0x1A, 0x57])
 export const VERSION = 0x01
-export const HEADER_SIZE = 65
+export const HEADER_SIZE = 64
 export const ALLOCATED_BYTE_OFFSET = 6
 
 /**

@@ -2,16 +2,17 @@ import { HEADER_SIZE, MAGIC, buildAAD } from "../core/constants.ts"
 import { buildHeader } from "../core/header.ts"
 import { randomBytes } from "../crypto/random.ts"
 import { withKey } from "../crypto/kdf.ts"
-import { resolveScheme } from "../crypto/registry.ts"
 import { normalizePassphrase } from "../passphrase/normalizer.ts"
 import type { PassphraseMode } from "../crypto/schemes/types.ts"
+import type { ICryptoScheme } from "../crypto/schemes/types.ts"
+import { PayloadTooLargeError } from "../errors.ts"
 
 export interface BuildSlotParams {
   passphrase: string
   data: Uint8Array
   slotIndex: number
   mode: PassphraseMode
-  schemeId: number
+  scheme: ICryptoScheme
   slotSize: number
 }
 
@@ -20,10 +21,18 @@ export const buildSlot = async ({
   data,
   slotIndex,
   mode,
-  schemeId,
+  scheme,
   slotSize
 }: BuildSlotParams): Promise<Uint8Array> => {
-  const scheme = resolveScheme(schemeId)
+  const schemeId = scheme.id
+  let extraNonceBytes = 0
+  if (scheme.nonceBytes > 12) {
+    extraNonceBytes = scheme.nonceBytes - 12
+  }
+  const requiredSize = HEADER_SIZE + extraNonceBytes + data.length + scheme.tagBytes
+  if (requiredSize > slotSize) {
+    throw new PayloadTooLargeError(requiredSize, slotSize)
+  }
   const salt = randomBytes(16)
   const slotNonce = randomBytes(16)
   const nonce = randomBytes(scheme.nonceBytes)
@@ -42,7 +51,13 @@ export const buildSlot = async ({
   })
   const aad = buildAAD(slotIndex, schemeId)
   return await withKey(
-    scheme.deriveKey(norm + String.fromCharCode(...slotNonce), salt, mode),
+    (() => {
+      const passBytes = new TextEncoder().encode(norm)
+      const kdfInput = new Uint8Array(passBytes.length + slotNonce.length)
+      kdfInput.set(passBytes, 0)
+      kdfInput.set(slotNonce, passBytes.length)
+      return scheme.deriveKey(kdfInput, salt, mode)
+    })(),
     async (key: Uint8Array) => {
       const { ciphertext, tag } = await scheme.encrypt(key, nonce, data, aad)
       let offset = HEADER_SIZE

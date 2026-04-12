@@ -3,6 +3,8 @@
  */
 export type PassphraseMode = "pin" | "unicode"
 
+const isPinMode = (input: string): boolean => /^\d{5}$/.test(input)
+
 export interface PassphraseValidationResult {
   readonly valid: boolean
   readonly mode: PassphraseMode
@@ -18,16 +20,20 @@ export interface PassphraseValidationResult {
  *               Rejects whitespace-only strings.
  */
 export const detectPassphraseMode = (input: string): PassphraseMode => {
-  return /^\d{5}$/.test(input) ? "pin" : "unicode"
+  return isPinMode(input) ? "pin" : "unicode"
 }
 
 export const validatePassphrase = (input: string): PassphraseValidationResult => {
   const warnings: string[] = []
   const errors: string[] = []
   const codepoints = [...input]
-  if (/^\d{5}$/.test(input)) {
+  if (isPinMode(input)) {
     warnings.push("PIN mode: low entropy")
     return { valid: true, mode: "pin", warnings, errors }
+  }
+  if (/^\s+$/.test(input)) {
+    errors.push("Whitespace-only passphrase not allowed")
+    return { valid: false, mode: "unicode", warnings, errors }
   }
   if (/^\d+$/.test(input)) {
     errors.push("All-digit string not allowed in unicode mode")
@@ -35,10 +41,6 @@ export const validatePassphrase = (input: string): PassphraseValidationResult =>
   }
   if (codepoints.length < 8) {
     errors.push("Passphrase must be at least 8 codepoints")
-    return { valid: false, mode: "unicode", warnings, errors }
-  }
-  if (/^\s+$/.test(input)) {
-    errors.push("Whitespace-only passphrase not allowed")
     return { valid: false, mode: "unicode", warnings, errors }
   }
   return { valid: true, mode: "unicode", warnings, errors }

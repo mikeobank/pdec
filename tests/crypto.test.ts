@@ -11,7 +11,7 @@ import { DecryptionFailedError, UnknownSchemeError } from "../src/errors.ts"
 
 Deno.test("scheme 0x01: encrypt then decrypt returns original plaintext", async () => {
   const scheme = AES256GCMArgon2
-  const key = scheme.deriveKey("password", new Uint8Array(16), "unicode")
+  const key = scheme.deriveKey(new TextEncoder().encode("password"), new Uint8Array(16), "unicode")
   const nonce = new Uint8Array(scheme.nonceBytes)
   const aad = new Uint8Array([1, 2, 3, 4, 5, 6])
   const pt = new Uint8Array([1, 2, 3, 4, 5])
@@ -22,7 +22,7 @@ Deno.test("scheme 0x01: encrypt then decrypt returns original plaintext", async 
 
 Deno.test("scheme 0x02: encrypt then decrypt returns original plaintext", async () => {
   const scheme = XChaCha20Argon2
-  const key = scheme.deriveKey("password", new Uint8Array(16), "unicode")
+  const key = scheme.deriveKey(new TextEncoder().encode("password"), new Uint8Array(16), "unicode")
   const nonce = new Uint8Array(scheme.nonceBytes)
   const aad = new Uint8Array([1, 2, 3, 4, 5, 6])
   const pt = new Uint8Array([1, 2, 3, 4, 5])
@@ -33,7 +33,7 @@ Deno.test("scheme 0x02: encrypt then decrypt returns original plaintext", async 
 
 Deno.test("scheme 0x03: encrypt then decrypt returns original plaintext", async () => {
   const scheme = AES256GCMScrypt
-  const key = scheme.deriveKey("password", new Uint8Array(16), "unicode")
+  const key = scheme.deriveKey(new TextEncoder().encode("password"), new Uint8Array(16), "unicode")
   const nonce = new Uint8Array(scheme.nonceBytes)
   const aad = new Uint8Array([1, 2, 3, 4, 5, 6])
   const pt = new Uint8Array([1, 2, 3, 4, 5])
@@ -44,7 +44,7 @@ Deno.test("scheme 0x03: encrypt then decrypt returns original plaintext", async 
 
 Deno.test("scheme 0x01: flipped ciphertext byte fails AEAD authentication", async () => {
   const scheme = AES256GCMArgon2
-  const key = scheme.deriveKey("password", new Uint8Array(16), "unicode")
+  const key = scheme.deriveKey(new TextEncoder().encode("password"), new Uint8Array(16), "unicode")
   const nonce = new Uint8Array(scheme.nonceBytes)
   const aad = new Uint8Array([1, 2, 3, 4, 5, 6])
   const pt = new Uint8Array([1, 2, 3, 4, 5])
@@ -57,7 +57,7 @@ Deno.test("scheme 0x01: flipped ciphertext byte fails AEAD authentication", asyn
 
 Deno.test("scheme 0x02: flipped ciphertext byte fails AEAD authentication", async () => {
   const scheme = XChaCha20Argon2
-  const key = scheme.deriveKey("password", new Uint8Array(16), "unicode")
+  const key = scheme.deriveKey(new TextEncoder().encode("password"), new Uint8Array(16), "unicode")
   const nonce = new Uint8Array(scheme.nonceBytes)
   const aad = new Uint8Array([1, 2, 3, 4, 5, 6])
   const pt = new Uint8Array([1, 2, 3, 4, 5])
@@ -70,7 +70,7 @@ Deno.test("scheme 0x02: flipped ciphertext byte fails AEAD authentication", asyn
 
 Deno.test("scheme 0x03: flipped ciphertext byte fails AEAD authentication", async () => {
   const scheme = AES256GCMScrypt
-  const key = scheme.deriveKey("password", new Uint8Array(16), "unicode")
+  const key = scheme.deriveKey(new TextEncoder().encode("password"), new Uint8Array(16), "unicode")
   const nonce = new Uint8Array(scheme.nonceBytes)
   const aad = new Uint8Array([1, 2, 3, 4, 5, 6])
   const pt = new Uint8Array([1, 2, 3, 4, 5])
@@ -83,7 +83,7 @@ Deno.test("scheme 0x03: flipped ciphertext byte fails AEAD authentication", asyn
 
 Deno.test("scheme 0x01: modified AAD fails AEAD authentication", async () => {
   const scheme = AES256GCMArgon2
-  const key = scheme.deriveKey("password", new Uint8Array(16), "unicode")
+  const key = scheme.deriveKey(new TextEncoder().encode("password"), new Uint8Array(16), "unicode")
   const nonce = new Uint8Array(scheme.nonceBytes)
   const aad = new Uint8Array([1, 2, 3, 4, 5, 6])
   const pt = new Uint8Array([1, 2, 3, 4, 5])
@@ -97,7 +97,7 @@ Deno.test("scheme 0x01: modified AAD fails AEAD authentication", async () => {
 
 Deno.test("scheme 0x02: modified AAD fails AEAD authentication", async () => {
   const scheme = XChaCha20Argon2
-  const key = scheme.deriveKey("password", new Uint8Array(16), "unicode")
+  const key = scheme.deriveKey(new TextEncoder().encode("password"), new Uint8Array(16), "unicode")
   const nonce = new Uint8Array(scheme.nonceBytes)
   const aad = new Uint8Array([1, 2, 3, 4, 5, 6])
   const pt = new Uint8Array([1, 2, 3, 4, 5])
@@ -111,7 +111,7 @@ Deno.test("scheme 0x02: modified AAD fails AEAD authentication", async () => {
 
 Deno.test("scheme 0x03: modified AAD fails AEAD authentication", async () => {
   const scheme = AES256GCMScrypt
-  const key = scheme.deriveKey("password", new Uint8Array(16), "unicode")
+  const key = scheme.deriveKey(new TextEncoder().encode("password"), new Uint8Array(16), "unicode")
   const nonce = new Uint8Array(scheme.nonceBytes)
   const aad = new Uint8Array([1, 2, 3, 4, 5, 6])
   const pt = new Uint8Array([1, 2, 3, 4, 5])
@@ -125,22 +125,30 @@ Deno.test("scheme 0x03: modified AAD fails AEAD authentication", async () => {
 
 Deno.test("PIN mode uses higher Argon2id memory cost than unicode mode", () => {
   const testArgon2KDF = createArgon2KDF(
-    { m: 8, t: 1, p: 1, dkLen: 32 },
-    { m: 8, t: 1, p: 1, dkLen: 32 }
+    { m: 64, t: 1, p: 1, dkLen: 32 },
+    { m: 32, t: 1, p: 1, dkLen: 32 }
   )
-  const pinKey = testArgon2KDF("12345", new Uint8Array(16), "pin")
-  const unicodeKey = testArgon2KDF("password", new Uint8Array(16), "unicode")
+  const passphrase = new Uint8Array([0x31, 0x32, 0x33, 0x34, 0x35])
+  const salt = new Uint8Array(16)
+  const pinKey = testArgon2KDF(passphrase, salt, "pin")
+  const unicodeKey = testArgon2KDF(passphrase, salt, "unicode")
   assertEquals(pinKey.length, unicodeKey.length)
+  assertEquals(pinKey.length, 32)
+  assert(pinKey.some((b, i) => b !== unicodeKey[i]))
 })
 
 Deno.test("PIN mode uses higher scrypt N than unicode mode", () => {
   const testScryptKDF = createScryptKDF(
-    { N: 16, r: 1, p: 1, dkLen: 32 },
+    { N: 32, r: 1, p: 1, dkLen: 32 },
     { N: 16, r: 1, p: 1, dkLen: 32 }
   )
-  const pinKey = testScryptKDF("12345", new Uint8Array(16), "pin")
-  const unicodeKey = testScryptKDF("password", new Uint8Array(16), "unicode")
+  const passphrase = new Uint8Array([0x31, 0x32, 0x33, 0x34, 0x35])
+  const salt = new Uint8Array(16)
+  const pinKey = testScryptKDF(passphrase, salt, "pin")
+  const unicodeKey = testScryptKDF(passphrase, salt, "unicode")
   assertEquals(pinKey.length, unicodeKey.length)
+  assertEquals(pinKey.length, 32)
+  assert(pinKey.some((b, i) => b !== unicodeKey[i]))
 })
 
 Deno.test("withKey zeroes key buffer after fn resolves successfully", async () => {

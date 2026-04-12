@@ -4,6 +4,21 @@ import { BufferHandle } from "../src/io/buffer-handle.ts"
 import { computeLayout } from "../src/core/layout.ts"
 import { randomBytes } from "../src/crypto/random.ts"
 import { ContainerFullError } from "../src/errors.ts"
+import { tryDecryptSlot } from "../src/slot/scanner.ts"
+import { AES256GCMArgon2 } from "../src/crypto/schemes/aes256-gcm-argon2.ts"
+import { createArgon2KDF } from "../src/crypto/kdf.ts"
+import { registerScheme } from "../src/crypto/registry.ts"
+
+const FAST_SCHEME_ID = 0x90
+registerScheme({
+  ...AES256GCMArgon2,
+  id: FAST_SCHEME_ID,
+  name: "AES-256-GCM+Argon2id (fast test)",
+  deriveKey: createArgon2KDF(
+    { m: 8, t: 1, p: 1, dkLen: 32 },
+    { m: 8, t: 1, p: 1, dkLen: 32 }
+  )
+})
 
 function makeContainer(layoutOverrides = {}): PDECContainer {
   const layout = computeLayout(layoutOverrides)
@@ -71,56 +86,25 @@ Deno.test("wipe returns false when passphrase has no slot", async () => {
   assertEquals(wiped, false)
 })
 
-
-
 Deno.test("two slots are independently accessible", async () => {
-  // Register a custom fast test scheme for Argon2id
-  const { registerScheme } = await import("../src/crypto/registry.ts")
-  const { AES256GCMArgon2 } = await import("../src/crypto/schemes/aes256-gcm-argon2.ts")
-  const { createArgon2KDF } = await import("../src/crypto/kdf.ts")
-  const fastScheme = {
-    ...AES256GCMArgon2,
-    id: 0x98,
-    name: "AES-256-GCM+Argon2id (fast test)",
-    deriveKey: createArgon2KDF(
-      { m: 8, t: 1, p: 1, dkLen: 32 },
-      { m: 8, t: 1, p: 1, dkLen: 32 }
-    )
-  }
-  registerScheme(fastScheme)
-  const c = makeContainer({ scheme: 0x98 })
+  const c = makeContainer({ scheme: FAST_SCHEME_ID })
   const data1 = randomBytes(32)
   const data2 = randomBytes(32)
-  await c.write("password123", data1, { scheme: 0x98 })
-  await c.write("password456", data2, { scheme: 0x98 })
+  await c.write("password123", data1, { scheme: FAST_SCHEME_ID })
+  await c.write("password456", data2, { scheme: FAST_SCHEME_ID })
   const slot1 = await c.read("password123")
   const slot2 = await c.read("password456")
   assertEquals(slot1?.data, data1)
   assertEquals(slot2?.data, data2)
 })
 
-
 Deno.test("overwriting a slot preserves all other slots", async () => {
-  // Register a custom fast test scheme for Argon2id
-  const { registerScheme } = await import("../src/crypto/registry.ts")
-  const { AES256GCMArgon2 } = await import("../src/crypto/schemes/aes256-gcm-argon2.ts")
-  const { createArgon2KDF } = await import("../src/crypto/kdf.ts")
-  const fastScheme = {
-    ...AES256GCMArgon2,
-    id: 0x97,
-    name: "AES-256-GCM+Argon2id (fast test)",
-    deriveKey: createArgon2KDF(
-      { m: 8, t: 1, p: 1, dkLen: 32 },
-      { m: 8, t: 1, p: 1, dkLen: 32 }
-    )
-  }
-  registerScheme(fastScheme)
-  const c = makeContainer({ scheme: 0x97 })
+  const c = makeContainer({ scheme: FAST_SCHEME_ID })
   const data1 = randomBytes(32)
   const data2 = randomBytes(32)
-  await c.write("password123", data1, { scheme: 0x97 })
-  await c.write("password456", data2, { scheme: 0x97 })
-  await c.write("password123", data2, { scheme: 0x97 })
+  await c.write("password123", data1, { scheme: FAST_SCHEME_ID })
+  await c.write("password456", data2, { scheme: FAST_SCHEME_ID })
+  await c.write("password123", data2, { scheme: FAST_SCHEME_ID })
   const slot1 = await c.read("password123")
   const slot2 = await c.read("password456")
   assertEquals(slot1?.data, data2)
@@ -128,23 +112,9 @@ Deno.test("overwriting a slot preserves all other slots", async () => {
 })
 
 Deno.test("write with 5-digit PIN passphrase succeeds", async () => {
-  // Register a custom fast test scheme for Argon2id
-  const { registerScheme } = await import("../src/crypto/registry.ts")
-  const { AES256GCMArgon2 } = await import("../src/crypto/schemes/aes256-gcm-argon2.ts")
-  const { createArgon2KDF } = await import("../src/crypto/kdf.ts")
-  const fastScheme = {
-    ...AES256GCMArgon2,
-    id: 0x99,
-    name: "AES-256-GCM+Argon2id (fast test)",
-    deriveKey: createArgon2KDF(
-      { m: 8, t: 1, p: 1, dkLen: 32 },
-      { m: 8, t: 1, p: 1, dkLen: 32 }
-    )
-  }
-  registerScheme(fastScheme)
-  const c = makeContainer({ scheme: 0x99 })
+  const c = makeContainer({ scheme: FAST_SCHEME_ID })
   const data = randomBytes(32)
-  await c.write("12345", data, { scheme: 0x99 })
+  await c.write("12345", data, { scheme: FAST_SCHEME_ID })
   const slot = await c.read("12345")
   assert(slot)
   assertEquals(slot?.data, data)
@@ -193,32 +163,17 @@ Deno.test("ContainerFullError thrown when all slots are occupied", async () => {
 })
 
 Deno.test("forceNewSlot allocates additional slot instead of overwriting", async () => {
-  // Register a custom fast test scheme for Argon2id
-  const { registerScheme } = await import("../src/crypto/registry.ts")
-  const { AES256GCMArgon2 } = await import("../src/crypto/schemes/aes256-gcm-argon2.ts")
-  const { createArgon2KDF } = await import("../src/crypto/kdf.ts")
-  const fastScheme = {
-    ...AES256GCMArgon2,
-    id: 0x96,
-    name: "AES-256-GCM+Argon2id (fast test)",
-    deriveKey: createArgon2KDF(
-      { m: 8, t: 1, p: 1, dkLen: 32 },
-      { m: 8, t: 1, p: 1, dkLen: 32 }
-    )
-  }
-  registerScheme(fastScheme)
-  const c = makeContainer({ maxSlots: 2, scheme: 0x96 })
+  const c = makeContainer({ maxSlots: 2, scheme: FAST_SCHEME_ID })
   const data1 = randomBytes(32)
   const data2 = randomBytes(32)
-  await c.write("password123", data1, { scheme: 0x96 })
-  await new Promise((r) => setTimeout(r, 5))
-  await c.write("password123", data2, { forceNewSlot: true, scheme: 0x96 })
+  await c.write("password123", data1, { scheme: FAST_SCHEME_ID })
+  await c.write("password123", data2, { forceNewSlot: true, scheme: FAST_SCHEME_ID })
   // Read both slots directly by index
   const slots = []
   for (let i = 0; i < 2; ++i) {
-    const slotBytes = await c["_handle"].read(i * c.layout.slotSize, c.layout.slotSize)
-    const { tryDecryptSlot } = await import("../src/slot/scanner.ts")
-    const result = await tryDecryptSlot(slotBytes, i, "password123", c.layout)
+    // @ts-ignore: _readSlotBytes is a test helper
+    const slotBytes = await c._readSlotBytes(i)
+    const result = await tryDecryptSlot(slotBytes, i, "password123")
     if (result) slots.push(result)
   }
   // Both data1 and data2 should be present
@@ -231,8 +186,7 @@ Deno.test("forceNewSlot allocates additional slot instead of overwriting", async
   const slot = await c.read("password123")
   assert(slot)
   const slotDataArr = Array.from(slot.data)
-  const valid = datas.some(arr => arr.toString() === slotDataArr.toString())
-  assert(valid)
+  assert(datas.some(arr => arr.toString() === slotDataArr.toString()))
 })
 
 Deno.test("SlotData.writtenAt is within 5 seconds of current time", async () => {

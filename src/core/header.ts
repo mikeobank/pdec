@@ -54,7 +54,7 @@ export const parseHeader = (bytes: Uint8Array): SlotHeader => {
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
   const magic = bytes.slice(0, 4)
   const version = bytes[4]
-  if (version !== VERSION) throw new VersionMismatchError()
+  if (version !== VERSION) throw new VersionMismatchError(version)
   const schemeId = Number(bytes[5])
   const allocated = Number(bytes[6])
   const salt = bytes.slice(8, 24)

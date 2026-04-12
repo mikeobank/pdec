@@ -1,14 +1,16 @@
 import type { IRandomAccessHandle } from "../io/types.ts"
 import { FileHandle } from "../io/file-handle.ts"
 import { computeLayout, slotOffset } from "./layout.ts"
+import { CONTAINER_METADATA_SIZE, readContainerMetadata, writeContainerMetadata } from "./container_meta.ts"
 //
-import { randomBytes, jitter } from "../crypto/random.ts"
+import { randomBytes, jitter, shuffleIndices } from "../crypto/random.ts"
 import { scanSlots } from "../slot/scanner.ts"
 import { findFreeSlot } from "../slot/allocator.ts"
+import { buildSlot } from "./build_slot.ts"
 import { validatePassphrase } from "../passphrase/validator.ts"
 import { resolveScheme } from "../crypto/registry.ts"
 //
-import { InvalidPassphraseError } from "../errors.ts"
+import { InvalidLayoutError, InvalidPassphraseError } from "../errors.ts"
 import { ALLOCATED_BYTE_OFFSET } from "./constants.ts"
 
 export interface PDECCreateOptions {
@@ -52,7 +54,8 @@ export class PDECContainer {
     const layout = computeLayout({
       ...(options.totalSize !== undefined ? { totalSize: options.totalSize } : {}),
       ...(options.maxSlots !== undefined ? { maxSlots: options.maxSlots } : {}),
-      ...(options.scheme !== undefined ? { defaultScheme: options.scheme } : {})
+      ...(options.scheme !== undefined ? { defaultScheme: options.scheme } : {}),
+      metadataBytes: CONTAINER_METADATA_SIZE
     })
     let file: Deno.FsFile
     try {
@@ -65,13 +68,26 @@ export class PDECContainer {
       const msg = typeof e === "object" && e && "message" in e ? (e as { message?: string }).message : undefined
       throw new Error("Failed to open file: " + (msg ?? "unknown error"))
     }
-    const buf = randomBytes(layout.totalSize)
     await file.seek(0, Deno.SeekMode.Start)
     let written = 0
-    while (written < buf.length) {
-      const n = await file.write(buf.subarray(written))
-      if (n === null || n === undefined) throw new Error("Unexpected EOF during write")
-      written += n
+    const chunkSize = 1048576 // 1 MiB chunks
+    while (written < layout.totalSize) {
+      const remaining = layout.totalSize - written
+      const currentChunkSize = Math.min(chunkSize, remaining)
+      const chunk = randomBytes(currentChunkSize)
+      let pos = 0
+      while (pos < chunk.length) {
+        const n = await file.write(chunk.subarray(pos))
+        if (n === null || n === undefined) throw new Error("Unexpected EOF during write")
+        pos += n
+      }
+      written += currentChunkSize
+    }
+    await writeContainerMetadata(file, layout)
+    for (let i = 0; i < layout.maxSlots; ++i) {
+      await file.seek(slotOffset(layout, i) + ALLOCATED_BYTE_OFFSET, Deno.SeekMode.Start)
+      const n = await file.write(new Uint8Array([0]))
+      if (n !== 1) throw new Error("Failed to initialize free-slot marker")
     }
     await file.sync()
     const handle = new FileHandle(file, layout.totalSize)
@@ -79,13 +95,28 @@ export class PDECContainer {
   }
 
   /**
-   * Open an existing container file. Does not validate any plaintext.
-   * Infers layout from file size using computeLayout defaults.
+   * Open an existing container file.
+   * Reads persisted container metadata when present.
+   * Falls back to legacy size-based inference for old containers.
    */
   static async open(path: string): Promise<PDECContainer> {
     const file = await Deno.open(path, { read: true, write: true })
     const stat = await file.stat()
-    const layout = computeLayout({ totalSize: stat.size })
+    const metadata = await readContainerMetadata(file)
+    let layout
+    if (metadata !== undefined) {
+      layout = computeLayout({
+        totalSize: stat.size,
+        maxSlots: metadata.maxSlots,
+        defaultScheme: metadata.defaultScheme,
+        metadataBytes: metadata.dataOffset
+      })
+      if (metadata.totalSize !== stat.size || metadata.slotSize !== layout.slotSize || metadata.dataOffset !== layout.dataOffset) {
+        throw new InvalidLayoutError("Container metadata does not match file geometry")
+      }
+    } else {
+      layout = computeLayout({ totalSize: stat.size })
+    }
     const handle = new FileHandle(file, stat.size)
     return new PDECContainer(handle, layout)
   }
@@ -103,13 +134,11 @@ export class PDECContainer {
    * Returns SlotData on success, undefined if no slot matched.
    */
   async read(passphrase: string): Promise<SlotData | undefined> {
-    const { shuffleIndices } = await import("../crypto/random.ts")
     const order = shuffleIndices(this._layout.maxSlots)
     const result = await scanSlots(
       (i) => this._handle.read(slotOffset(this._layout, i), this._layout.slotSize),
       order,
-      passphrase,
-      this._layout
+      passphrase
     )
     await jitter(50, 200)
     if (!result) return undefined
@@ -135,8 +164,7 @@ export class PDECContainer {
       const result = await scanSlots(
         (i) => this._handle.read(slotOffset(this._layout, i), this._layout.slotSize),
         order,
-        passphrase,
-        this._layout
+        passphrase
       )
       if (result) slotIndex = result.slotIndex
     }
@@ -147,16 +175,17 @@ export class PDECContainer {
       )
     }
     const schemeId: number = options?.scheme !== undefined ? options.scheme! : this._layout.defaultScheme
-    if (typeof schemeId !== "number" || Number.isNaN(schemeId)) throw new Error("schemeId must be a number")
+    if (typeof schemeId !== "number" || !Number.isInteger(schemeId) || schemeId < 0 || schemeId > 255) {
+      throw new Error("schemeId must be an integer in range 0..255")
+    }
     const scheme = resolveScheme(schemeId)
     if (scheme.forceMode !== undefined) mode = scheme.forceMode
-    const { buildSlot } = await import("./build_slot.ts")
     const slotBuf = await buildSlot({
       passphrase,
       data,
       slotIndex,
       mode,
-      schemeId,
+      scheme,
       slotSize: this._layout.slotSize
     })
     await this._handle.write(slotOffset(this._layout, slotIndex), slotBuf)
@@ -168,13 +197,11 @@ export class PDECContainer {
    * Returns false if passphrase had no slot, true if wiped.
    */
   async wipe(passphrase: string): Promise<boolean> {
-    const { shuffleIndices } = await import("../crypto/random.ts")
     const order = shuffleIndices(this._layout.maxSlots)
     const result = await scanSlots(
       (i) => this._handle.read(slotOffset(this._layout, i), this._layout.slotSize),
       order,
-      passphrase,
-      this._layout
+      passphrase
     )
     if (!result) return false
     const slotBuf = randomBytes(this._layout.slotSize)
@@ -182,6 +209,10 @@ export class PDECContainer {
     await this._handle.write(slotOffset(this._layout, result.slotIndex), slotBuf)
     await this._handle.sync()
     return true
+  }
+
+  _readSlotBytes(i: number): Promise<Uint8Array> {
+    return this._handle.read(slotOffset(this._layout, i), this._layout.slotSize)
   }
 
   get layout(): ReturnType<typeof computeLayout> {

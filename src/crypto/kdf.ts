@@ -20,8 +20,8 @@ export interface ScryptParams {
 export const createArgon2KDF = (
   paramsPin: Argon2Params,
   paramsUnicode: Argon2Params
-): (passphrase: string, salt: Uint8Array, mode: PassphraseMode) => Uint8Array => {
-  return (passphrase: string, salt: Uint8Array, mode: PassphraseMode): Uint8Array => {
+): (passphrase: Uint8Array, salt: Uint8Array, mode: PassphraseMode) => Uint8Array => {
+  return (passphrase: Uint8Array, salt: Uint8Array, mode: PassphraseMode): Uint8Array => {
     const params = mode === "pin" ? paramsPin : paramsUnicode
     return argon2id(passphrase, salt, params)
   }
@@ -30,8 +30,8 @@ export const createArgon2KDF = (
 export const createScryptKDF = (
   paramsPin: ScryptParams,
   paramsUnicode: ScryptParams
-): (passphrase: string, salt: Uint8Array, mode: PassphraseMode) => Uint8Array => {
-  return (passphrase: string, salt: Uint8Array, mode: PassphraseMode): Uint8Array => {
+): (passphrase: Uint8Array, salt: Uint8Array, mode: PassphraseMode) => Uint8Array => {
+  return (passphrase: Uint8Array, salt: Uint8Array, mode: PassphraseMode): Uint8Array => {
     const params = mode === "pin" ? paramsPin : paramsUnicode
     return scrypt(passphrase, salt, params)
   }

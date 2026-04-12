@@ -70,26 +70,32 @@ await container.close();
 
 ## 8. Binary File Format Diagram
 ```
-[ ENCRYPTED BLOB | RANDOM PADDING ]
- ↑                ↑
- HEADER_SIZE +    slotSize − (HEADER_SIZE + payloadLen + tagBytes)
- payloadLen +
- tagBytes bytes
+[ CONTAINER METADATA | SLOT 0 | SLOT 1 | ... ]
+ 64 bytes             fixed-size records
 
-Slot header (inside AEAD):
+Inside each slot:
+[ PLAINTEXT HEADER | OPTIONAL EXTENDED NONCE BYTES | ENCRYPTED PAYLOAD+TAG | RANDOM PADDING ]
+ 64 bytes           scheme.nonceBytes-12           data + tag bytes        remaining padding
+
+Slot header structure (64 bytes, plaintext, NOT inside AEAD):
 Offset  Size  Field
 ─────────────────────────────────────────────
 0       4    Magic: 0xDE 0xC0 0x1A 0x57
 4       1    Version: 0x01
 5       1    Scheme ID
-6       2    Reserved: 0x00 0x00
+6       1    Allocated flag: 1 = in-use, 0 = free
+7       1    Reserved: 0x00
 8      16    KDF salt
-24     12    Nonce/IV
+24     12    AEAD nonce (12 bytes; 24-byte nonce in payload)
 36      4    Payload length (LE)
 40      8    Write timestamp (uint64 LE)
-48     16    Slot nonce
+48     16    Slot nonce (mixed with passphrase for KDF)
 ──────────────────────────────
 64     HEADER_SIZE
+
+AEAD ciphertext+tag (all encrypted):
+[optional extended nonce bytes are stored before ciphertext in the slot body]
+[ciphertext for payload][AEAD authentication tag]
 ```
 
 ## 9. Security Properties
