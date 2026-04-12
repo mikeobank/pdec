@@ -9,7 +9,7 @@ export class HeaderLengthError extends Error {
 }
 
 /**
- * Slot header structure (plaintext, inside AEAD).
+ * Slot header structure (plaintext, NOT inside AEAD).
  */
 export interface SlotHeader {
   readonly magic: Uint8Array // 4 bytes

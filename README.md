@@ -74,8 +74,8 @@ await container.close();
  64 bytes             fixed-size records
 
 Inside each slot:
-[ PLAINTEXT HEADER | OPTIONAL EXTENDED NONCE BYTES | ENCRYPTED PAYLOAD+TAG | RANDOM PADDING ]
- 64 bytes           scheme.nonceBytes-12           data + tag bytes        remaining padding
+[ PLAINTEXT HEADER | OPTIONAL FULL NONCE (scheme.nonceBytes) | ENCRYPTED PAYLOAD+TAG | RANDOM PADDING ]
+ 64 bytes           present only when nonceBytes > 12  data + tag bytes        remaining padding
 
 Slot header structure (64 bytes, plaintext, NOT inside AEAD):
 Offset  Size  Field

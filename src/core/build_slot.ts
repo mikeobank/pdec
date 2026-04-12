@@ -25,11 +25,8 @@ export const buildSlot = async ({
   slotSize
 }: BuildSlotParams): Promise<Uint8Array> => {
   const schemeId = scheme.id
-  let extraNonceBytes = 0
-  if (scheme.nonceBytes > 12) {
-    extraNonceBytes = scheme.nonceBytes - 12
-  }
-  const requiredSize = HEADER_SIZE + extraNonceBytes + data.length + scheme.tagBytes
+  const nonceInBody = scheme.nonceBytes > 12 ? scheme.nonceBytes : 0
+  const requiredSize = HEADER_SIZE + nonceInBody + data.length + scheme.tagBytes
   if (requiredSize > slotSize) {
     throw new PayloadTooLargeError(requiredSize, slotSize)
   }
