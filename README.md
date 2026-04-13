@@ -30,25 +30,25 @@ A PDEC is a single encrypted file containing multiple independent slots, each un
 
 ## 4. Quickstart
 ```ts
-import { PDECContainer } from './mod.ts';
+import { PDECContainer } from "./mod.ts"
 
 // Create a new container
-const container = await PDECContainer.create({ path: 'vault.pdec', overwrite: true });
+const container = await PDECContainer.create({ path: "vault.pdec", overwrite: true })
 
 // Write two slots
-await container.write('decoy12345', new Uint8Array([1, 2, 3]));
-await container.write('realSecret🔑', new TextEncoder().encode('Sensitive data'));
+await container.write("decoy12345", new Uint8Array([1, 2, 3]))
+await container.write("realSecret🔑", new TextEncoder().encode("Sensitive data"))
 
 // Read a slot
-const slot = await container.read('realSecret🔑');
+const slot = await container.read("realSecret🔑")
 if (slot) {
-  console.log(new TextDecoder().decode(slot.data));
+  console.log(new TextDecoder().decode(slot.data))
 }
 
 // Wipe a slot
-await container.wipe('decoy12345');
+await container.wipe("decoy12345")
 
-await container.close();
+await container.close()
 ```
 
 ## 5. Deno Permissions Required
