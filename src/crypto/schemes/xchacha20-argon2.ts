@@ -35,7 +35,7 @@ export const XChaCha20Argon2 = {
       ct.set(ciphertext, 0)
       ct.set(tag, ciphertext.length)
       return Promise.resolve(cipher.decrypt(ct))
-    } catch (_e) {
+    } catch (_error) {
       return Promise.reject(new DecryptionFailedError())
     }
   }

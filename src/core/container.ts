@@ -64,8 +64,8 @@ export class PDECContainer {
       } else {
         file = await Deno.open(options.path, { create: true, write: true, read: true, truncate: true })
       }
-    } catch (e) {
-      const msg = typeof e === "object" && e && "message" in e ? (e as { message?: string }).message : undefined
+    } catch (error) {
+      const msg = typeof error === "object" && error && "message" in error ? (error as { message?: string }).message : undefined
       throw new Error("Failed to open file: " + (msg ?? "unknown error"))
     }
     await file.seek(0, Deno.SeekMode.Start)
