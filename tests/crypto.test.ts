@@ -1,13 +1,11 @@
 import type { EncryptResult } from "../src/crypto/schemes/types.ts"
-import { assertEquals, assertRejects, assert, assertThrows } from "@std/assert"
+import { assert, assertEquals, assertRejects, assertThrows } from "@std/assert"
 import { AES256GCMArgon2 } from "../src/crypto/schemes/aes256-gcm-argon2.ts"
 import { XChaCha20Argon2 } from "../src/crypto/schemes/xchacha20-argon2.ts"
 import { AES256GCMScrypt } from "../src/crypto/schemes/aes256-gcm-scrypt.ts"
-import { withKey, createArgon2KDF, createScryptKDF } from "../src/crypto/kdf.ts"
-import { resolveScheme, registerScheme } from "../src/crypto/registry.ts"
+import { createArgon2KDF, createScryptKDF, withKey } from "../src/crypto/kdf.ts"
+import { registerScheme, resolveScheme } from "../src/crypto/registry.ts"
 import { DecryptionFailedError, UnknownSchemeError } from "../src/errors.ts"
-
-
 
 Deno.test("scheme 0x01: encrypt then decrypt returns original plaintext", async () => {
   const scheme = AES256GCMArgon2
@@ -153,13 +151,20 @@ Deno.test("PIN mode uses higher scrypt N than unicode mode", () => {
 
 Deno.test("withKey zeroes key buffer after fn resolves successfully", async () => {
   const key = new Uint8Array([1, 2, 3, 4, 5])
-    await withKey(key, (k) => { assertEquals(k, key); return undefined })
+  await withKey(key, (k) => {
+    assertEquals(k, key)
+    return undefined
+  })
   assert(key.every((b) => b === 0))
 })
 
 Deno.test("withKey zeroes key buffer even when fn throws", async () => {
   const key = new Uint8Array([1, 2, 3, 4, 5])
-  await assertRejects(() => withKey(key, () => { throw new Error("fail") }))
+  await assertRejects(() =>
+    withKey(key, () => {
+      throw new Error("fail")
+    })
+  )
   assert(key.every((b) => b === 0))
 })
 

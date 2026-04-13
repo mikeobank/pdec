@@ -1,15 +1,19 @@
 # PDEC: Plausibly Deniable Encrypted Container for Deno
 
 ## 1. Concept: Plausible Deniability and Why It Matters
+
 A PDEC is a single encrypted file containing multiple independent slots, each unlocked by a different passphrase. Without the correct passphrase, all slots are indistinguishable from random data. This allows users to plausibly deny the existence of sensitive data under duress, revealing only decoy slots if necessary.
 
 ## 2. Threat Model
+
 **Protects against:**
+
 - Forensic analysis of the container file
 - Adversaries demanding passphrases under duress
 - Detection of slot count, usage, or presence of real data
 
 **Does NOT protect against:**
+
 - OS swap/hibernation leaking key material
 - File access timestamps (use `noatime`)
 - Adversaries who can snapshot the file before and after a write
@@ -17,6 +21,7 @@ A PDEC is a single encrypted file containing multiple independent slots, each un
 - Memory not pinned (no mlock equivalent in Deno)
 
 ## 3. Architecture: Functional Core / Imperative Shell
+
 ```
 +-------------------+      +-------------------+
 |  Functional Core  |      |  Imperative Shell |
@@ -29,6 +34,7 @@ A PDEC is a single encrypted file containing multiple independent slots, each un
 ```
 
 ## 4. Quickstart
+
 ```ts
 import { PDECContainer } from "./mod.ts"
 
@@ -52,23 +58,27 @@ await container.close()
 ```
 
 ## 5. Deno Permissions Required
+
 - `--allow-read` and `--allow-write` for file access
 - `--allow-net` for npm: dependencies (Argon2id, scrypt, XChaCha20)
 
 ## 6. Passphrase Policy Table
-| Mode    | Rule                        | Entropy Notes           |
-|---------|-----------------------------|-------------------------|
-| pin     | Exactly 5 digits            | Low entropy, warning    |
-| unicode | ≥8 codepoints, not all-digits| Recommend >40 bits      |
+
+| Mode    | Rule                          | Entropy Notes        |
+| ------- | ----------------------------- | -------------------- |
+| pin     | Exactly 5 digits              | Low entropy, warning |
+| unicode | ≥8 codepoints, not all-digits | Recommend >40 bits   |
 
 ## 7. Cryptographic Scheme Comparison
+
 | ID   | KDF      | Cipher             | Nonce | Tag | Notes       |
-|------|----------|--------------------|-------|-----|-------------|
+| ---- | -------- | ------------------ | ----- | --- | ----------- |
 | 0x01 | Argon2id | AES-256-GCM        | 12 B  | 16B | default     |
 | 0x02 | Argon2id | XChaCha20-Poly1305 | 24 B  | 16B | large nonce |
 | 0x03 | scrypt   | AES-256-GCM        | 12 B  | 16B | CPU-hard    |
 
 ## 8. Binary File Format Diagram
+
 ```
 [ CONTAINER METADATA | SLOT 0 | SLOT 1 | ... ]
  64 bytes             fixed-size records
@@ -99,6 +109,7 @@ AEAD ciphertext+tag (all encrypted):
 ```
 
 ## 9. Security Properties
+
 - **Full slot scan:** All slots are always scanned, never early return. ([src/slot/scanner.ts])
 - **Timing jitter:** Random delay after scan. ([src/crypto/random.ts], [src/core/container.ts])
 - **Random scan order:** Indices shuffled with CSPRNG. ([src/crypto/random.ts])
@@ -110,6 +121,7 @@ AEAD ciphertext+tag (all encrypted):
 - **Null boundary rule:** Only undefined, never null. ([src/errors.ts], [src/io/file-handle.ts])
 
 ## 10. Known Limitations
+
 - OS swap/hibernation may expose key material
 - File access timestamps leak usage (use noatime)
 - KDF runs on caller thread, no Web Worker isolation
@@ -117,14 +129,18 @@ AEAD ciphertext+tag (all encrypted):
 - File change detection: adversary who snapshots before and after a write can confirm a slot was modified
 
 ## 11. Running Tests
+
 ```
 deno task test                        # all tests
 deno test tests/container.test.ts     # single file
 ```
+
 Test files follow the *.test.ts naming convention.
 
 ## 12. Dependency Rationale
+
 - **@noble/hashes** and **@noble/ciphers**: Audited, zero dependencies, no WASM, pure TypeScript.
 
 ## 13. License
+
 MIT

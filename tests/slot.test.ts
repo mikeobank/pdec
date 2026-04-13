@@ -1,4 +1,4 @@
-import { assertEquals, assert } from "@std/assert"
+import { assert, assertEquals } from "@std/assert"
 import { scanSlots, tryDecryptSlot } from "../src/slot/scanner.ts"
 import { computeLayout } from "../src/core/layout.ts"
 import { BufferHandle } from "../src/io/buffer-handle.ts"
@@ -34,7 +34,14 @@ Deno.test("fresh container — all slots return undefined on scan", async () => 
 Deno.test("allocated slot is found by subsequent scanSlots call", async () => {
   const handle = makeHandle()
   const data = randomBytes(32)
-  const slotBuf = await buildSlot({ passphrase: "password123", data, slotIndex: 0, mode: "unicode", scheme: resolveScheme(SLOT_TEST_SCHEME_ID), slotSize: layout.slotSize })
+  const slotBuf = await buildSlot({
+    passphrase: "password123",
+    data,
+    slotIndex: 0,
+    mode: "unicode",
+    scheme: resolveScheme(SLOT_TEST_SCHEME_ID),
+    slotSize: layout.slotSize
+  })
   await handle.write(0, slotBuf)
   const order = Array.from({ length: layout.maxSlots }, (_, i) => i)
   const result = await scanSlots((i) => handle.read(i * layout.slotSize, layout.slotSize), order, "password123")
@@ -45,7 +52,14 @@ Deno.test("allocated slot is found by subsequent scanSlots call", async () => {
 Deno.test("scanSlots with shuffled order returns same data as sequential order", async () => {
   const handle = makeHandle()
   const data = randomBytes(32)
-  const slotBuf = await buildSlot({ passphrase: "password123", data, slotIndex: 2, mode: "unicode", scheme: resolveScheme(SLOT_TEST_SCHEME_ID), slotSize: layout.slotSize })
+  const slotBuf = await buildSlot({
+    passphrase: "password123",
+    data,
+    slotIndex: 2,
+    mode: "unicode",
+    scheme: resolveScheme(SLOT_TEST_SCHEME_ID),
+    slotSize: layout.slotSize
+  })
   await handle.write(2 * layout.slotSize, slotBuf)
   const sequential = Array.from({ length: layout.maxSlots }, (_, i) => i)
   const shuffled = [4, 0, 7, 2, 5, 1, 3, 6]
@@ -64,7 +78,7 @@ Deno.test("read() duration is >= 50ms even on empty container", async () => {
   const start = Date.now()
   await c.read("password123")
   const elapsed = Date.now() - start
-  assert(elapsed >= 50, `Expected >= 50ms, got ${ elapsed }ms`)
+  assert(elapsed >= 50, `Expected >= 50ms, got ${elapsed}ms`)
 })
 
 Deno.test("tryDecryptSlot returns undefined for random bytes — no throw", async () => {
@@ -75,15 +89,28 @@ Deno.test("tryDecryptSlot returns undefined for random bytes — no throw", asyn
 
 Deno.test("tryDecryptSlot returns undefined for wrong passphrase on real slot", async () => {
   const data = randomBytes(32)
-  const slotBuf = await buildSlot({ passphrase: "password123", data, slotIndex: 0, mode: "unicode", scheme: resolveScheme(SLOT_TEST_SCHEME_ID), slotSize: layout.slotSize })
+  const slotBuf = await buildSlot({
+    passphrase: "password123",
+    data,
+    slotIndex: 0,
+    mode: "unicode",
+    scheme: resolveScheme(SLOT_TEST_SCHEME_ID),
+    slotSize: layout.slotSize
+  })
   const result = await tryDecryptSlot(slotBuf, 0, "wrongpassword")
   assertEquals(result, undefined)
 })
 
 Deno.test("AAD mismatch causes tryDecryptSlot to return undefined", async () => {
   const data = randomBytes(32)
-  const slotBuf = await buildSlot({ passphrase: "password123", data, slotIndex: 0, mode: "unicode", scheme: resolveScheme(SLOT_TEST_SCHEME_ID), slotSize: layout.slotSize })
+  const slotBuf = await buildSlot({
+    passphrase: "password123",
+    data,
+    slotIndex: 0,
+    mode: "unicode",
+    scheme: resolveScheme(SLOT_TEST_SCHEME_ID),
+    slotSize: layout.slotSize
+  })
   const result = await tryDecryptSlot(slotBuf, 1, "password123")
   assertEquals(result, undefined)
 })
-

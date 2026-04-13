@@ -2,7 +2,6 @@ import { argon2id } from "@noble/hashes/argon2"
 import { scrypt } from "@noble/hashes/scrypt"
 import type { PassphraseMode } from "./schemes/types.ts"
 
-
 export interface Argon2Params {
   m: number
   t: number

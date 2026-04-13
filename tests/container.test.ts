@@ -1,4 +1,4 @@
-import { assertEquals, assertRejects, assert } from "@std/assert"
+import { assert, assertEquals, assertRejects } from "@std/assert"
 import { PDECContainer } from "../src/core/container.ts"
 import { BufferHandle } from "../src/io/buffer-handle.ts"
 import { computeLayout } from "../src/core/layout.ts"
@@ -177,16 +177,16 @@ Deno.test("forceNewSlot allocates additional slot instead of overwriting", async
     if (result) slots.push(result)
   }
   // Both data1 and data2 should be present
-  const datas = slots.map(s => Array.from(s.payload))
+  const datas = slots.map((s) => Array.from(s.payload))
   const d1 = Array.from(data1)
   const d2 = Array.from(data2)
-  assert(datas.some(arr => arr.toString() === d1.toString()))
-  assert(datas.some(arr => arr.toString() === d2.toString()))
+  assert(datas.some((arr) => arr.toString() === d1.toString()))
+  assert(datas.some((arr) => arr.toString() === d2.toString()))
   // read() should return one of the valid slots
   const slot = await c.read("password123")
   assert(slot)
   const slotDataArr = Array.from(slot.data)
-  assert(datas.some(arr => arr.toString() === slotDataArr.toString()))
+  assert(datas.some((arr) => arr.toString() === slotDataArr.toString()))
 })
 
 Deno.test("SlotData.writtenAt is within 5 seconds of current time", async () => {

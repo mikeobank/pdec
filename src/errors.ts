@@ -17,7 +17,7 @@ export class PayloadTooLargeError extends PDECError {
   readonly requiredSize: number
   readonly slotSize: number
   constructor(requiredSize: number, slotSize: number) {
-    super(`Payload too large: needs ${ requiredSize } bytes, slot size is ${ slotSize }`)
+    super(`Payload too large: needs ${requiredSize} bytes, slot size is ${slotSize}`)
     this.requiredSize = requiredSize
     this.slotSize = slotSize
   }
@@ -34,7 +34,7 @@ export class IOError extends PDECError {
 export class VersionMismatchError extends PDECError {
   readonly actualVersion: number
   constructor(actualVersion: number) {
-    super(`Header version is 0x${ actualVersion.toString(16) }, expected 0x01`)
+    super(`Header version is 0x${actualVersion.toString(16)}, expected 0x01`)
     this.actualVersion = actualVersion
   }
 }

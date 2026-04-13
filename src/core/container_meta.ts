@@ -53,7 +53,7 @@ export const parseContainerMetadata = (bytes: Uint8Array): ContainerMetadata => 
     throw new Error("Container metadata magic mismatch")
   }
   if (bytes[4] !== CONTAINER_METADATA_VERSION) {
-    throw new Error(`Unsupported container metadata version: ${ bytes[4] }`)
+    throw new Error(`Unsupported container metadata version: ${bytes[4]}`)
   }
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
   const maxSlots = Number(bytes[5])

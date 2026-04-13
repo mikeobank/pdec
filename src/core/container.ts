@@ -3,7 +3,7 @@ import { FileHandle } from "../io/file-handle.ts"
 import { computeLayout, slotOffset } from "./layout.ts"
 import { CONTAINER_METADATA_SIZE, readContainerMetadata, writeContainerMetadata } from "./container_meta.ts"
 //
-import { randomBytes, jitter, shuffleIndices } from "../crypto/random.ts"
+import { jitter, randomBytes, shuffleIndices } from "../crypto/random.ts"
 import { scanSlots } from "../slot/scanner.ts"
 import { findFreeSlot } from "../slot/allocator.ts"
 import { buildSlot } from "./build_slot.ts"

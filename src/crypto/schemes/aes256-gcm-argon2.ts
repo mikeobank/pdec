@@ -1,5 +1,5 @@
 import { createArgon2KDF } from "../kdf.ts"
-import type { ICryptoScheme, EncryptResult } from "./types.ts"
+import type { EncryptResult, ICryptoScheme } from "./types.ts"
 import { DecryptionFailedError } from "../../errors.ts"
 
 /**
@@ -14,7 +14,7 @@ export const AES256GCMArgon2 = {
 
   deriveKey: createArgon2KDF(
     { m: 262144, t: 10, p: 1, dkLen: 32 }, // pin
-    { m: 65536, t: 3, p: 1, dkLen: 32 }   // unicode
+    { m: 65536, t: 3, p: 1, dkLen: 32 } // unicode
   ),
 
   encrypt: async (key: Uint8Array, nonce: Uint8Array, plaintext: Uint8Array, aad: Uint8Array): Promise<EncryptResult> => {

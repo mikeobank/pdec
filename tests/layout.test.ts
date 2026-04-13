@@ -25,13 +25,9 @@ Deno.test("default maxSlots is 8", () => {
   assertEquals(layout.maxSlots, 8)
 })
 
-
-
 Deno.test("ContainerTooSmallError for totalSize < 1 MiB", () => {
   assertThrows(() => computeLayout({ totalSize: 1024 }), ContainerTooSmallError)
 })
-
-
 
 Deno.test("ContainerTooSmallError when slotSize < HEADER_SIZE + 1", () => {
   assertThrows(() => computeLayout({ totalSize: (HEADER_SIZE + 1) * 2 - 1, maxSlots: 2 }), ContainerTooSmallError)

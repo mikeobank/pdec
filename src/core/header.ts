@@ -1,4 +1,4 @@
-import { VERSION, HEADER_SIZE } from "./constants.ts"
+import { HEADER_SIZE, VERSION } from "./constants.ts"
 import { VersionMismatchError } from "../errors.ts"
 
 export class HeaderLengthError extends Error {
@@ -60,8 +60,7 @@ export const parseHeader = (bytes: Uint8Array): SlotHeader => {
   const salt = bytes.slice(8, 24)
   const nonce = bytes.slice(24, 36)
   const payloadLen = view.getUint32(36, true)
-  const writtenAtMs =
-    view.getUint32(40, true) + 0x100000000 * view.getUint32(44, true)
+  const writtenAtMs = view.getUint32(40, true) + 0x100000000 * view.getUint32(44, true)
   const slotNonce = bytes.slice(48, 64)
   return {
     magic,
@@ -72,6 +71,6 @@ export const parseHeader = (bytes: Uint8Array): SlotHeader => {
     nonce,
     payloadLen,
     writtenAtMs,
-    slotNonce,
+    slotNonce
   }
 }

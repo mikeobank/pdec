@@ -1,4 +1,4 @@
-import { assertEquals, assert, assertRejects } from "@std/assert"
+import { assert, assertEquals, assertRejects } from "@std/assert"
 import { PDECContainer } from "../src/core/container.ts"
 import { randomBytes } from "../src/crypto/random.ts"
 import { ContainerTooSmallError, InvalidLayoutError } from "../src/errors.ts"
@@ -15,7 +15,7 @@ const ensureTestDir = async () => {
 
 Deno.test("PDECContainer.create writes a valid file", async () => {
   await ensureTestDir()
-  const path = `${ testDir }/test1.pdec`
+  const path = `${testDir}/test1.pdec`
   try {
     const c = await PDECContainer.create({ path, overwrite: true })
     await c.write("testpass", randomBytes(32))
@@ -33,7 +33,7 @@ Deno.test("PDECContainer.create writes a valid file", async () => {
 
 Deno.test("PDECContainer.create with custom totalSize", async () => {
   await ensureTestDir()
-  const path = `${ testDir }/test2.pdec`
+  const path = `${testDir}/test2.pdec`
   try {
     const c = await PDECContainer.create({ path, totalSize: 10485760, overwrite: true }) // 10 MiB
     await c.write("testpass", randomBytes(32))
@@ -51,7 +51,7 @@ Deno.test("PDECContainer.create with custom totalSize", async () => {
 
 Deno.test("PDECContainer.open reads an existing file", async () => {
   await ensureTestDir()
-  const path = `${ testDir }/test3.pdec`
+  const path = `${testDir}/test3.pdec`
   try {
     const c1 = await PDECContainer.create({ path, totalSize: 10485760, overwrite: true })
     const data = randomBytes(32)
@@ -73,7 +73,7 @@ Deno.test("PDECContainer.open reads an existing file", async () => {
 
 Deno.test("PDECContainer.create rejects if file exists and overwrite=false", async () => {
   await ensureTestDir()
-  const path = `${ testDir }/test4.pdec`
+  const path = `${testDir}/test4.pdec`
   try {
     const c1 = await PDECContainer.create({ path, overwrite: true })
     await c1.close()
@@ -106,7 +106,7 @@ Deno.test("PDECContainer.create rejects invalid maxSlots", async () => {
 
 Deno.test("Multiple passphrases in same session", async () => {
   await ensureTestDir()
-  const path = `${ testDir }/test5.pdec`
+  const path = `${testDir}/test5.pdec`
   try {
     const c = await PDECContainer.create({ path, totalSize: 67108864, maxSlots: 4, overwrite: true })
     const data1 = randomBytes(32)
@@ -131,7 +131,7 @@ Deno.test("Multiple passphrases in same session", async () => {
 
 Deno.test("Wipe persists across container close/reopen", async () => {
   await ensureTestDir()
-  const path = `${ testDir }/test6.pdec`
+  const path = `${testDir}/test6.pdec`
   try {
     const c1 = await PDECContainer.create({ path, totalSize: 10485760, overwrite: true })
     await c1.write("testpass", randomBytes(32))
@@ -152,7 +152,7 @@ Deno.test("Wipe persists across container close/reopen", async () => {
 
 Deno.test("Custom maxSlots and default scheme persist across reopen", async () => {
   await ensureTestDir()
-  const path = `${ testDir }/test7.pdec`
+  const path = `${testDir}/test7.pdec`
   try {
     const c1 = await PDECContainer.create({
       path,
@@ -183,8 +183,8 @@ Deno.test("Custom maxSlots and default scheme persist across reopen", async () =
 
 Deno.test("PDECContainer.create surfaces permission errors", async () => {
   await ensureTestDir()
-  const readOnlyDir = `${ testDir }/readonly`
-  const path = `${ readOnlyDir }/permission-denied.pdec`
+  const readOnlyDir = `${testDir}/readonly`
+  const path = `${readOnlyDir}/permission-denied.pdec`
   try {
     await Deno.mkdir(readOnlyDir, { recursive: true })
     await Deno.chmod(readOnlyDir, 0o555)

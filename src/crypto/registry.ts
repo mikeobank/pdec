@@ -2,7 +2,7 @@ import { AES256GCMArgon2 } from "./schemes/aes256-gcm-argon2.ts"
 import { XChaCha20Argon2 } from "./schemes/xchacha20-argon2.ts"
 import { AES256GCMScrypt } from "./schemes/aes256-gcm-scrypt.ts"
 import type { ICryptoScheme } from "./schemes/types.ts"
-import { UnknownSchemeError, SchemeAlreadyRegisteredError } from "../errors.ts"
+import { SchemeAlreadyRegisteredError, UnknownSchemeError } from "../errors.ts"
 
 const _registry = new Map<number, ICryptoScheme>([
   [AES256GCMArgon2.id, AES256GCMArgon2],

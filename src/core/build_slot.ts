@@ -1,4 +1,4 @@
-import { HEADER_SIZE, MAGIC, buildAAD } from "../core/constants.ts"
+import { buildAAD, HEADER_SIZE, MAGIC } from "../core/constants.ts"
 import { buildHeader } from "../core/header.ts"
 import { randomBytes } from "../crypto/random.ts"
 import { withKey } from "../crypto/kdf.ts"
