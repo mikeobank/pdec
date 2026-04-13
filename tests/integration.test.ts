@@ -1,5 +1,8 @@
-import { assert, assertEquals, assertRejects } from "@std/assert"
+import { assert, assertEquals, assertRejects, assertThrows } from "@std/assert"
 import { PDECContainer } from "../src/core/container.ts"
+import { FileHandle } from "../src/io/file-handle.ts"
+import { computeLayout } from "../src/core/layout.ts"
+import { CONTAINER_METADATA_SIZE } from "../src/core/container_meta.ts"
 import { randomBytes } from "../src/crypto/random.ts"
 import { ContainerTooSmallError, InvalidLayoutError } from "../src/errors.ts"
 
@@ -15,9 +18,11 @@ const ensureTestDir = async () => {
 
 Deno.test("PDECContainer.create writes a valid file", async () => {
   await ensureTestDir()
-  const path = `${testDir}/test1.pdec`
+  const path = `${ testDir }/test1.pdec`
+  const layout = computeLayout({ metadataBytes: CONTAINER_METADATA_SIZE })
   try {
-    const c = await PDECContainer.create({ path, overwrite: true })
+    const handle = await FileHandle.create(path, layout.totalSize, true)
+    const c = await PDECContainer.create(handle, layout)
     await c.write("testpass", randomBytes(32))
     await c.close()
     const stat = await Deno.stat(path)
@@ -33,9 +38,11 @@ Deno.test("PDECContainer.create writes a valid file", async () => {
 
 Deno.test("PDECContainer.create with custom totalSize", async () => {
   await ensureTestDir()
-  const path = `${testDir}/test2.pdec`
+  const path = `${ testDir }/test2.pdec`
+  const layout = computeLayout({ totalSize: 10485760, metadataBytes: CONTAINER_METADATA_SIZE })
   try {
-    const c = await PDECContainer.create({ path, totalSize: 10485760, overwrite: true }) // 10 MiB
+    const handle = await FileHandle.create(path, layout.totalSize, true)
+    const c = await PDECContainer.create(handle, layout)
     await c.write("testpass", randomBytes(32))
     await c.close()
     const stat = await Deno.stat(path)
@@ -51,10 +58,12 @@ Deno.test("PDECContainer.create with custom totalSize", async () => {
 
 Deno.test("PDECContainer.open reads an existing file", async () => {
   await ensureTestDir()
-  const path = `${testDir}/test3.pdec`
+  const path = `${ testDir }/test3.pdec`
+  const layout = computeLayout({ totalSize: 10485760, metadataBytes: CONTAINER_METADATA_SIZE })
   try {
-    const c1 = await PDECContainer.create({ path, totalSize: 10485760, overwrite: true })
+    const handle = await FileHandle.create(path, layout.totalSize, true)
     const data = randomBytes(32)
+    const c1 = await PDECContainer.create(handle, layout)
     await c1.write("testpass", data)
     await c1.close()
     const c2 = await PDECContainer.open(path)
@@ -71,14 +80,16 @@ Deno.test("PDECContainer.open reads an existing file", async () => {
   }
 })
 
-Deno.test("PDECContainer.create rejects if file exists and overwrite=false", async () => {
+Deno.test("FileHandle.create rejects if file exists and overwrite=false", async () => {
   await ensureTestDir()
-  const path = `${testDir}/test4.pdec`
+  const path = `${ testDir }/test4.pdec`
+  const layout = computeLayout({ metadataBytes: CONTAINER_METADATA_SIZE })
   try {
-    const c1 = await PDECContainer.create({ path, overwrite: true })
-    await c1.close()
+    const handle = await FileHandle.create(path, layout.totalSize, true)
+    const c = await PDECContainer.create(handle, layout)
+    await c.close()
     await assertRejects(
-      () => PDECContainer.create({ path, overwrite: false }),
+      () => FileHandle.create(path, layout.totalSize, false),
       Error
     )
   } finally {
@@ -90,25 +101,27 @@ Deno.test("PDECContainer.create rejects if file exists and overwrite=false", asy
   }
 })
 
-Deno.test("PDECContainer.create rejects totalSize < 1 MiB", async () => {
-  await assertRejects(
-    () => PDECContainer.create({ path: "/tmp/nope", totalSize: 1024 }),
+Deno.test("computeLayout rejects totalSize < 1 MiB", () => {
+  assertThrows(
+    () => computeLayout({ totalSize: 1024, metadataBytes: CONTAINER_METADATA_SIZE }),
     ContainerTooSmallError
   )
 })
 
-Deno.test("PDECContainer.create rejects invalid maxSlots", async () => {
-  await assertRejects(
-    () => PDECContainer.create({ path: "/tmp/nope", maxSlots: 33 }),
+Deno.test("computeLayout rejects invalid maxSlots", () => {
+  assertThrows(
+    () => computeLayout({ maxSlots: 33, metadataBytes: CONTAINER_METADATA_SIZE }),
     InvalidLayoutError
   )
 })
 
 Deno.test("Multiple passphrases in same session", async () => {
   await ensureTestDir()
-  const path = `${testDir}/test5.pdec`
+  const path = `${ testDir }/test5.pdec`
+  const layout = computeLayout({ totalSize: 67108864, maxSlots: 4, metadataBytes: CONTAINER_METADATA_SIZE })
   try {
-    const c = await PDECContainer.create({ path, totalSize: 67108864, maxSlots: 4, overwrite: true })
+    const handle = await FileHandle.create(path, layout.totalSize, true)
+    const c = await PDECContainer.create(handle, layout)
     const data1 = randomBytes(32)
     const data2 = randomBytes(32)
     await c.write("password1", data1)
@@ -131,9 +144,11 @@ Deno.test("Multiple passphrases in same session", async () => {
 
 Deno.test("Wipe persists across container close/reopen", async () => {
   await ensureTestDir()
-  const path = `${testDir}/test6.pdec`
+  const path = `${ testDir }/test6.pdec`
+  const layout = computeLayout({ totalSize: 10485760, metadataBytes: CONTAINER_METADATA_SIZE })
   try {
-    const c1 = await PDECContainer.create({ path, totalSize: 10485760, overwrite: true })
+    const handle = await FileHandle.create(path, layout.totalSize, true)
+    const c1 = await PDECContainer.create(handle, layout)
     await c1.write("testpass", randomBytes(32))
     await c1.wipe("testpass")
     await c1.close()
@@ -152,16 +167,12 @@ Deno.test("Wipe persists across container close/reopen", async () => {
 
 Deno.test("Custom maxSlots and default scheme persist across reopen", async () => {
   await ensureTestDir()
-  const path = `${testDir}/test7.pdec`
+  const path = `${ testDir }/test7.pdec`
+  const layout = computeLayout({ totalSize: 16777216, maxSlots: 4, defaultScheme: 0x02, metadataBytes: CONTAINER_METADATA_SIZE })
   try {
-    const c1 = await PDECContainer.create({
-      path,
-      totalSize: 16777216,
-      maxSlots: 4,
-      scheme: 0x02,
-      overwrite: true
-    })
+    const handle = await FileHandle.create(path, layout.totalSize, true)
     const data = randomBytes(32)
+    const c1 = await PDECContainer.create(handle, layout)
     await c1.write("testpass", data)
     await c1.close()
 
@@ -181,14 +192,15 @@ Deno.test("Custom maxSlots and default scheme persist across reopen", async () =
   }
 })
 
-Deno.test("PDECContainer.create surfaces permission errors", async () => {
+Deno.test("FileHandle.create surfaces permission errors", async () => {
   await ensureTestDir()
-  const readOnlyDir = `${testDir}/readonly`
-  const path = `${readOnlyDir}/permission-denied.pdec`
+  const readOnlyDir = `${ testDir }/readonly`
+  const layout = computeLayout({ metadataBytes: CONTAINER_METADATA_SIZE })
+  const path = `${ readOnlyDir }/permission-denied.pdec`
   try {
     await Deno.mkdir(readOnlyDir, { recursive: true })
     await Deno.chmod(readOnlyDir, 0o555)
-    await assertRejects(() => PDECContainer.create({ path, overwrite: true }), Error)
+    await assertRejects(() => FileHandle.create(path, layout.totalSize, true), Error)
   } finally {
     try {
       await Deno.chmod(readOnlyDir, 0o755)

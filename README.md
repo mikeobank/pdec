@@ -1,4 +1,4 @@
-# PDEC: Plausibly Deniable Encrypted Container for Deno
+# PDEC: Plausibly Deniable Encrypted Container
 
 ## 1. Concept: Plausible Deniability and Why It Matters
 
@@ -35,11 +35,15 @@ A PDEC is a single encrypted file containing multiple independent slots, each un
 
 ## 4. Quickstart
 
-```ts
-import { PDECContainer } from "./mod.ts"
+### Create and use a container (Deno)
 
-// Create a new container
-const container = await PDECContainer.create({ path: "vault.pdec", overwrite: true })
+```ts
+import { computeLayout, CONTAINER_METADATA_SIZE, FileHandle, PDECContainer } from "./mod.ts"
+
+// Compute layout and allocate file
+const layout = computeLayout({ metadataBytes: CONTAINER_METADATA_SIZE })
+const handle = await FileHandle.create("vault.pdec", layout.totalSize)
+const container = await PDECContainer.create(handle, layout)
 
 // Write two slots
 await container.write("decoy12345", new Uint8Array([1, 2, 3]))
@@ -57,19 +61,37 @@ await container.wipe("decoy12345")
 await container.close()
 ```
 
-## 5. Deno Permissions Required
+### Open an existing container
+
+```ts
+const container = await PDECContainer.open("vault.pdec")
+```
+
+## 5. Storage Backends
+
+Three `IRandomAccessHandle` implementations are provided. All expose the same `open(path)` / `create(path, size)` static factory API.
+
+| Class | Runtime | Backing storage |
+| --- | --- | --- |
+| `FileHandle` | Deno | `Deno.FsFile` (seek-based) |
+| `NodeFileHandle` | Node.js | `node:fs/promises` (`fh.read`/`fh.write` with byte offset) |
+| `OPFSHandle` | Browser (Worker) | `FileSystemSyncAccessHandle` via Origin Private File System |
+
+Custom backends can be plugged in by implementing `IRandomAccessHandle`.
+
+## 6. Deno Permissions Required
 
 - `--allow-read` and `--allow-write` for file access
 - `--allow-net` for npm: dependencies (Argon2id, scrypt, XChaCha20)
 
-## 6. Passphrase Policy Table
+## 7. Passphrase Policy Table
 
 | Mode    | Rule                          | Entropy Notes        |
 | ------- | ----------------------------- | -------------------- |
 | pin     | Exactly 5 digits              | Low entropy, warning |
 | unicode | ≥8 codepoints, not all-digits | Recommend >40 bits   |
 
-## 7. Cryptographic Scheme Comparison
+## 8. Cryptographic Scheme Comparison
 
 | ID   | KDF      | Cipher             | Nonce | Tag | Notes       |
 | ---- | -------- | ------------------ | ----- | --- | ----------- |
@@ -77,7 +99,7 @@ await container.close()
 | 0x02 | Argon2id | XChaCha20-Poly1305 | 24 B  | 16B | large nonce |
 | 0x03 | scrypt   | AES-256-GCM        | 12 B  | 16B | CPU-hard    |
 
-## 8. Binary File Format Diagram
+## 9. Binary File Format Diagram
 
 ```
 [ CONTAINER METADATA | SLOT 0 | SLOT 1 | ... ]
@@ -108,7 +130,7 @@ AEAD ciphertext+tag (all encrypted):
 [ciphertext for payload][AEAD authentication tag]
 ```
 
-## 9. Security Properties
+## 10. Security Properties
 
 - **Full slot scan:** All slots are always scanned, never early return. ([src/slot/scanner.ts])
 - **Timing jitter:** Random delay after scan. ([src/crypto/random.ts], [src/core/container.ts])
@@ -120,7 +142,7 @@ AEAD ciphertext+tag (all encrypted):
 - **No secret leakage:** No passphrase or key in errors/logs. ([src/errors.ts])
 - **Null boundary rule:** Only undefined, never null. ([src/errors.ts], [src/io/file-handle.ts])
 
-## 10. Known Limitations
+## 11. Known Limitations
 
 - OS swap/hibernation may expose key material
 - File access timestamps leak usage (use noatime)
@@ -128,7 +150,7 @@ AEAD ciphertext+tag (all encrypted):
 - No mlock equivalent in Deno (memory not pinned)
 - File change detection: adversary who snapshots before and after a write can confirm a slot was modified
 
-## 11. Running Tests
+## 12. Running Tests
 
 ```
 deno task test                        # all tests
@@ -137,10 +159,10 @@ deno test tests/container.test.ts     # single file
 
 Test files follow the *.test.ts naming convention.
 
-## 12. Dependency Rationale
+## 13. Dependency Rationale
 
 - **@noble/hashes** and **@noble/ciphers**: Audited, zero dependencies, no WASM, pure TypeScript.
 
-## 13. License
+## 14. License
 
 MIT

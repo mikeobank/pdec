@@ -1,9 +1,6 @@
 import type { IRandomAccessHandle } from "./types.ts"
 import { IOError } from "../errors.ts"
 
-/**
- * FileHandle implements IRandomAccessHandle for Deno.FsFile.
- */
 export class FileHandle implements IRandomAccessHandle {
   private file: Deno.FsFile
   readonly size: number
@@ -11,6 +8,20 @@ export class FileHandle implements IRandomAccessHandle {
   constructor(file: Deno.FsFile, size: number) {
     this.file = file
     this.size = size
+  }
+
+  static async open(path: string): Promise<FileHandle> {
+    const file = await Deno.open(path, { read: true, write: true })
+    const stat = await file.stat()
+    return new FileHandle(file, stat.size)
+  }
+
+  static async create(path: string, size: number, overwrite = false): Promise<FileHandle> {
+    const options = overwrite
+      ? { create: true, write: true, read: true, truncate: true }
+      : { createNew: true, write: true, read: true }
+    const file = await Deno.open(path, options)
+    return new FileHandle(file, size)
   }
 
   async read(offset: number, length: number): Promise<Uint8Array> {

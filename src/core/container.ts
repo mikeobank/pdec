@@ -1,7 +1,8 @@
 import type { IRandomAccessHandle } from "../io/types.ts"
+import type { ContainerLayout } from "./layout.ts"
 import { FileHandle } from "../io/file-handle.ts"
 import { computeLayout, slotOffset } from "./layout.ts"
-import { CONTAINER_METADATA_SIZE, readContainerMetadata, writeContainerMetadata } from "./container_meta.ts"
+import { readContainerMetadata, writeContainerMetadata } from "./container_meta.ts"
 //
 import { jitter, randomBytes, shuffleIndices } from "../crypto/random.ts"
 import { scanSlots } from "../slot/scanner.ts"
@@ -12,14 +13,6 @@ import { resolveScheme } from "../crypto/registry.ts"
 //
 import { InvalidLayoutError, InvalidPassphraseError } from "../errors.ts"
 import { ALLOCATED_BYTE_OFFSET } from "./constants.ts"
-
-export interface PDECCreateOptions {
-  path: string
-  totalSize?: number
-  maxSlots?: number
-  scheme?: number
-  overwrite?: boolean
-}
 
 export interface WriteOptions {
   scheme?: number
@@ -50,47 +43,20 @@ export class PDECContainer {
    * Create a new container file. Fill entirely with randomBytes() before returning.
    * Throw if file exists and overwrite is false.
    */
-  static async create(options: PDECCreateOptions): Promise<PDECContainer> {
-    const layout = computeLayout({
-      ...(options.totalSize !== undefined ? { totalSize: options.totalSize } : {}),
-      ...(options.maxSlots !== undefined ? { maxSlots: options.maxSlots } : {}),
-      ...(options.scheme !== undefined ? { defaultScheme: options.scheme } : {}),
-      metadataBytes: CONTAINER_METADATA_SIZE
-    })
-    let file: Deno.FsFile
-    try {
-      if (!options.overwrite) {
-        file = await Deno.open(options.path, { createNew: true, write: true, read: true })
-      } else {
-        file = await Deno.open(options.path, { create: true, write: true, read: true, truncate: true })
-      }
-    } catch (error) {
-      const msg = typeof error === "object" && error && "message" in error ? (error as { message?: string }).message : undefined
-      throw new Error("Failed to open file: " + (msg ?? "unknown error"))
-    }
-    await file.seek(0, Deno.SeekMode.Start)
+  static async create(handle: IRandomAccessHandle, layout: ContainerLayout): Promise<PDECContainer> {
+    const chunkSize = 1048576
     let written = 0
-    const chunkSize = 1048576 // 1 MiB chunks
     while (written < layout.totalSize) {
       const remaining = layout.totalSize - written
       const currentChunkSize = Math.min(chunkSize, remaining)
-      const chunk = randomBytes(currentChunkSize)
-      let pos = 0
-      while (pos < chunk.length) {
-        const n = await file.write(chunk.subarray(pos))
-        if (n === null || n === undefined) throw new Error("Unexpected EOF during write")
-        pos += n
-      }
+      await handle.write(written, randomBytes(currentChunkSize))
       written += currentChunkSize
     }
-    await writeContainerMetadata(file, layout)
+    await writeContainerMetadata(handle, layout)
     for (let i = 0; i < layout.maxSlots; ++i) {
-      await file.seek(slotOffset(layout, i) + ALLOCATED_BYTE_OFFSET, Deno.SeekMode.Start)
-      const n = await file.write(new Uint8Array([0]))
-      if (n !== 1) throw new Error("Failed to initialize free-slot marker")
+      await handle.write(slotOffset(layout, i) + ALLOCATED_BYTE_OFFSET, new Uint8Array([0]))
     }
-    await file.sync()
-    const handle = new FileHandle(file, layout.totalSize)
+    await handle.sync()
     return new PDECContainer(handle, layout)
   }
 
@@ -100,24 +66,22 @@ export class PDECContainer {
    * Falls back to legacy size-based inference for old containers.
    */
   static async open(path: string): Promise<PDECContainer> {
-    const file = await Deno.open(path, { read: true, write: true })
-    const stat = await file.stat()
-    const metadata = await readContainerMetadata(file)
+    const handle = await FileHandle.open(path)
+    const metadata = await readContainerMetadata(handle)
     let layout
     if (metadata !== undefined) {
       layout = computeLayout({
-        totalSize: stat.size,
+        totalSize: handle.size,
         maxSlots: metadata.maxSlots,
         defaultScheme: metadata.defaultScheme,
         metadataBytes: metadata.dataOffset
       })
-      if (metadata.totalSize !== stat.size || metadata.slotSize !== layout.slotSize || metadata.dataOffset !== layout.dataOffset) {
+      if (metadata.totalSize !== handle.size || metadata.slotSize !== layout.slotSize || metadata.dataOffset !== layout.dataOffset) {
         throw new InvalidLayoutError("Container metadata does not match file geometry")
       }
     } else {
-      layout = computeLayout({ totalSize: stat.size })
+      layout = computeLayout({ totalSize: handle.size })
     }
-    const handle = new FileHandle(file, stat.size)
     return new PDECContainer(handle, layout)
   }
 

@@ -1,4 +1,5 @@
 import type { ContainerLayout } from "./layout.ts"
+import type { IRandomAccessHandle } from "../io/types.ts"
 
 const CONTAINER_METADATA_MAGIC = new Uint8Array([0x50, 0x44, 0x45, 0x43]) // P D E C
 const CONTAINER_METADATA_VERSION = 0x01
@@ -12,26 +13,25 @@ export interface ContainerMetadata {
   readonly dataOffset: number
 }
 
-const writeAll = async (file: Deno.FsFile, data: Uint8Array): Promise<void> => {
-  let pos = 0
-  while (pos < data.length) {
-    const n = await file.write(data.subarray(pos))
-    if (n === null || n === undefined) throw new Error("Failed to write container metadata")
-    pos += n
-  }
+export const writeContainerMetadata = async (handle: IRandomAccessHandle, layout: ContainerLayout): Promise<void> => {
+  const bytes = buildContainerMetadata({
+    totalSize: layout.totalSize,
+    maxSlots: layout.maxSlots,
+    defaultScheme: layout.defaultScheme,
+    slotSize: layout.slotSize,
+    dataOffset: layout.dataOffset
+  })
+  await handle.write(0, bytes)
 }
 
-const readAll = async (file: Deno.FsFile, len: number): Promise<Uint8Array | undefined> => {
-  const buf = new Uint8Array(len)
-  let pos = 0
-  while (pos < len) {
-    const n = await file.read(buf.subarray(pos))
-    if (n === null) return undefined
-    pos += n
+export const readContainerMetadata = async (handle: IRandomAccessHandle): Promise<ContainerMetadata | undefined> => {
+  try {
+    const bytes = await handle.read(0, CONTAINER_METADATA_SIZE)
+    return parseContainerMetadata(bytes)
+  } catch {
+    return undefined
   }
-  return buf
 }
-
 export const buildContainerMetadata = (meta: ContainerMetadata): Uint8Array => {
   const out = new Uint8Array(CONTAINER_METADATA_SIZE)
   const view = new DataView(out.buffer)
@@ -70,25 +70,4 @@ export const parseContainerMetadata = (bytes: Uint8Array): ContainerMetadata => 
   }
 }
 
-export const writeContainerMetadata = async (file: Deno.FsFile, layout: ContainerLayout): Promise<void> => {
-  const bytes = buildContainerMetadata({
-    totalSize: layout.totalSize,
-    maxSlots: layout.maxSlots,
-    defaultScheme: layout.defaultScheme,
-    slotSize: layout.slotSize,
-    dataOffset: layout.dataOffset
-  })
-  await file.seek(0, Deno.SeekMode.Start)
-  await writeAll(file, bytes)
-}
 
-export const readContainerMetadata = async (file: Deno.FsFile): Promise<ContainerMetadata | undefined> => {
-  await file.seek(0, Deno.SeekMode.Start)
-  const bytes = await readAll(file, CONTAINER_METADATA_SIZE)
-  if (bytes === undefined) return undefined
-  try {
-    return parseContainerMetadata(bytes)
-  } catch {
-    return undefined
-  }
-}
