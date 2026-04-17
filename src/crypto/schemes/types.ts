@@ -18,6 +18,7 @@ export interface ICryptoScheme {
   readonly keyBytes: number
   readonly nonceBytes: number
   readonly tagBytes: number
+  readonly plaintextEnvelopeSize: number
   readonly forceMode?: PassphraseMode
   readonly deriveKey: (
     passphrase: Uint8Array,

@@ -1,16 +1,15 @@
 import { createArgon2KDF } from "../kdf.ts"
 import type { EncryptResult, ICryptoScheme } from "./types.ts"
 import { DecryptionFailedError } from "../../errors.ts"
+import { MAX_CIPHERTEXT_SIZE, NONCE_SIZE_AES, TAG_SIZE } from "../../core/constants.ts"
 
-/**
- * AES-256-GCM + Argon2id (scheme 0x01)
- */
 export const AES256GCMArgon2 = {
   id: 0x01,
   name: "AES-256-GCM+Argon2id",
   keyBytes: 32,
   nonceBytes: 12,
   tagBytes: 16,
+  plaintextEnvelopeSize: MAX_CIPHERTEXT_SIZE - NONCE_SIZE_AES - TAG_SIZE,
 
   deriveKey: createArgon2KDF(
     { m: 262144, t: 10, p: 1, dkLen: 32 }, // pin

@@ -2,16 +2,15 @@ import { xchacha20poly1305 } from "@noble/ciphers/chacha"
 import { createArgon2KDF } from "../kdf.ts"
 import type { EncryptResult, ICryptoScheme } from "./types.ts"
 import { DecryptionFailedError } from "../../errors.ts"
+import { MAX_CIPHERTEXT_SIZE, NONCE_SIZE_XCHACHA, TAG_SIZE } from "../../core/constants.ts"
 
-/**
- * XChaCha20-Poly1305 + Argon2id (scheme 0x02)
- */
 export const XChaCha20Argon2 = {
   id: 0x02,
   name: "XChaCha20-Poly1305+Argon2id",
   keyBytes: 32,
   nonceBytes: 24,
   tagBytes: 16,
+  plaintextEnvelopeSize: MAX_CIPHERTEXT_SIZE - NONCE_SIZE_XCHACHA - TAG_SIZE,
   forceMode: "unicode" as const,
 
   deriveKey: createArgon2KDF(

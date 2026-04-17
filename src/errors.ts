@@ -1,6 +1,3 @@
-/**
- * Base error for all PDEC errors.
- */
 export class PDECError extends Error {
   constructor(message?: string) {
     super(message)
@@ -10,16 +7,14 @@ export class PDECError extends Error {
 
 export class DecryptionFailedError extends PDECError {}
 export class InvalidPassphraseError extends PDECError {}
-export class ContainerFullError extends PDECError {}
 export class ContainerTooSmallError extends PDECError {}
-export class InvalidLayoutError extends PDECError {}
 export class PayloadTooLargeError extends PDECError {
   readonly requiredSize: number
-  readonly slotSize: number
-  constructor(requiredSize: number, slotSize: number) {
-    super(`Payload too large: needs ${requiredSize} bytes, slot size is ${slotSize}`)
+  readonly maxSize: number
+  constructor(requiredSize: number, maxSize: number) {
+    super(`Payload too large: needs ${ requiredSize } bytes, max is ${ maxSize }`)
     this.requiredSize = requiredSize
-    this.slotSize = slotSize
+    this.maxSize = maxSize
   }
 }
 export class UnknownSchemeError extends PDECError {}
@@ -34,7 +29,8 @@ export class IOError extends PDECError {
 export class VersionMismatchError extends PDECError {
   readonly actualVersion: number
   constructor(actualVersion: number) {
-    super(`Header version is 0x${actualVersion.toString(16)}, expected 0x01`)
+    super(`Envelope version is 0x${ actualVersion.toString(16) }, expected 0x02`)
     this.actualVersion = actualVersion
   }
 }
+export class CollisionError extends PDECError {}

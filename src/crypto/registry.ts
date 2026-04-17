@@ -10,9 +10,8 @@ const _registry = new Map<number, ICryptoScheme>([
   [AES256GCMScrypt.id, AES256GCMScrypt]
 ])
 
-/**
- * Resolve a scheme by ID. Throws UnknownSchemeError if not registered.
- */
+export const allSchemes = (): ICryptoScheme[] => Array.from(_registry.values())
+
 export const resolveScheme = (id: number): ICryptoScheme => {
   const scheme = _registry.get(id)
   if (scheme === undefined) throw new UnknownSchemeError()
