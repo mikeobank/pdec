@@ -1,7 +1,11 @@
 {
   "name": "@mikeobank/pdec",
   "version": "0.1.0",
+  "license": "MIT",
   "exports": "./mod.ts",
+  "publish": {
+    "exclude": ["AGENTS.md"]
+  },
   "tasks": {
     "test": "deno test --allow-read --allow-write && rm -rf ./test_containers",
     "check": "deno check mod.ts",
